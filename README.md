@@ -1,6 +1,8 @@
-# Brightloop Subscription Management System
+# Subly
 
-Subscription billing platform for Brightloop Software: products, plans, quotations,
+**Subscriptions. Billing. Simplified.**
+
+Subly is the subscription management system built for Brightloop Software: products, plans, quotations,
 subscriptions, automatic recurring invoices, discounts, payments and revenue dashboards.
 
 | Part      | Stack                                                     | Folder                  |

@@ -19,12 +19,15 @@ import (
 
 // Deps carries everything route files need. Add new handlers here as modules land.
 type Deps struct {
-	Config config.Config
-	DB     *gorm.DB
-	JWT    *jwtutil.Manager
+    Config config.Config
+    DB     *gorm.DB
+    JWT    *jwtutil.Manager
 
-	Auth    *handler.AuthHandler
-	Payment *handler.PaymentHandler
+    Sessions middleware.SessionChecker
+
+    Auth    *handler.AuthHandler
+    Staff   *handler.StaffHandler
+    Payment *handler.PaymentHandler
 }
 
 // Role guards, reused by every routes_*.go file.
@@ -54,7 +57,7 @@ func New(d Deps) *gin.Engine {
 
 	// Everything below requires a valid JWT.
 	authed := api.Group("")
-	authed.Use(middleware.Auth(d.JWT))
+	authed.Use(middleware.Auth(d.JWT, d.Sessions))
 
 	registerAuthRoutes(authed, d)
 	registerStaffRoutes(authed, d)

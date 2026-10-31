@@ -9,6 +9,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+func init() {
+	// Millisecond "iat" so a token issued just before a password change can be
+	// told apart from one issued just after it (the default is whole seconds).
+	jwt.TimePrecision = time.Millisecond
+}
+
 type Claims struct {
 	Role       string `json:"role"`
 	CustomerID *int64 `json:"customer_id,omitempty"` // set only for role=customer

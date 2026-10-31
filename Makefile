@@ -6,13 +6,66 @@ GO_DOCKER := docker run --rm -v "$(CURDIR)/backend":/src -w /src -v brightloop-g
 -include .env
 export
 
-.PHONY: help up down restart logs ps migrate migrate-down seed psql reset mock-api \
-        be-test be-vet be-fmt be-tidy fe-get fe-run fe-test fe-analyze
+.PHONY: dev dev-backend dev-frontend dev-stop run setup wait-api \
+        help up down restart logs ps migrate migrate-down seed psql reset mock-api \
+        test-email be-test be-itest be-vet be-fmt be-tidy fe-get fe-run fe-test fe-analyze
+
+# ---------------------------------------------------------------------------
+# Day-to-day development (like the LMS project)
+#   make dev           backend (hot reload) in the background + Flutter in front
+#   make dev-backend   backend with hot reload, logs in this terminal
+#   make dev-frontend  Flutter only (backend must be running)
+#   make dev-stop      stop everything started by make dev
+#   make run           backend from the built image (no hot reload) + Flutter
+# ---------------------------------------------------------------------------
+FE_PORT ?= 5000
+FE_DEVICE ?= chrome
+API_URL := http://localhost:$(or $(API_PORT),8080)
+
+setup: ## First-time setup: create .env with a random JWT secret
+	@if [ ! -f .env ]; then \
+	  cp .env.example .env; \
+	  sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$$(openssl rand -hex 32)|" .env; \
+	  echo "Created .env (random JWT_SECRET). Review it, then run: make dev"; \
+	else echo ".env already exists, leaving it alone"; fi
+
+dev: setup ## Run backend (hot reload) + Flutter web. Ctrl+C stops Flutter only
+	@$(COMPOSE) stop api >/dev/null 2>&1 || true
+	$(COMPOSE) --profile dev up -d --build db migrate mailpit swagger api-dev
+	@$(MAKE) --no-print-directory wait-api
+	@echo "Backend: $(API_URL)/api/v1  ·  logs: make logs-dev  ·  Mailpit: http://localhost:8025"
+	@$(MAKE) --no-print-directory dev-frontend
+
+dev-backend: setup ## Backend only with hot reload, logs in this terminal
+	@$(COMPOSE) stop api >/dev/null 2>&1 || true
+	$(COMPOSE) --profile dev up --build db migrate mailpit swagger api-dev
+
+dev-frontend: ## Flutter web on :$(FE_PORT) against the running backend
+	cd frontend && flutter pub get && \
+	  flutter run -d $(FE_DEVICE) --web-port $(FE_PORT) --dart-define=API_BASE_URL=$(API_URL)/api/v1
+
+dev-stop: ## Stop everything started by make dev (keeps data)
+	$(COMPOSE) --profile dev down
+
+logs-dev: ## Follow hot-reload API logs
+	$(COMPOSE) --profile dev logs -f api-dev
+
+run: setup ## Backend from the built image (no hot reload) + Flutter web
+	@$(COMPOSE) --profile dev rm -sf api-dev >/dev/null 2>&1 || true
+	$(COMPOSE) up -d --build
+	@$(MAKE) --no-print-directory wait-api
+	@$(MAKE) --no-print-directory dev-frontend
+
+wait-api:
+	@printf "Waiting for API"; for i in $$(seq 1 150); do \
+	  curl -sf $(API_URL)/health >/dev/null && { echo " ✓ ready"; exit 0; }; printf "."; sleep 2; done; \
+	  echo " ✗ API didn't start. See: docker compose --profile dev logs api-dev"; exit 1
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## ' Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-up: ## Start db, migrations, api, mailpit, swagger
+up: ## Start db, migrations, api, mailpit, swagger (no hot reload)
+	@$(COMPOSE) --profile dev rm -sf api-dev >/dev/null 2>&1 || true
 	$(COMPOSE) up -d --build
 
 down: ## Stop everything (keeps data)
@@ -44,11 +97,21 @@ reset: ## DANGER: delete the database volume and start fresh
 	$(COMPOSE) down -v
 	$(MAKE) up
 
+test-email: ## Send one test email with the .env SMTP settings: make test-email TO=you@gmail.com
+	@test -n "$(TO)" || (echo "usage: make test-email TO=you@example.com" && exit 2)
+	$(COMPOSE) build api >/dev/null
+	$(COMPOSE) run --rm --no-deps --entrypoint ./mailtest api "$(TO)"
+
 mock-api: ## Start the Prism mock API on :4010 from openapi.yaml
 	$(COMPOSE) --profile mock up -d mock
 
 be-test: ## Run Go tests (in Docker)
 	$(GO_DOCKER) go test ./...
+
+be-itest: ## Integration tests against the docker-compose database (run `make up` first)
+	docker run --rm --network brightloop_default -v "$(CURDIR)/backend":/src -w /src -v brightloop-gomod:/go/pkg/mod -e GOTOOLCHAIN=local \
+	  -e TEST_DATABASE_URL="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)?sslmode=disable" \
+	  golang:1.26-alpine go test -count=1 -v ./tests/integration/...
 
 be-vet: ## go vet (in Docker)
 	$(GO_DOCKER) go vet ./...

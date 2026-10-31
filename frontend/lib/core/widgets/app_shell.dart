@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/application/auth_controller.dart';
 import '../router/nav_items.dart';
+import 'brand_mark.dart';
 
 /// One layout for every role. The menu is filtered by role from nav_items.dart:
 /// sidebar (NavigationRail) on wide screens, drawer on phones.
@@ -24,7 +25,7 @@ class AppShell extends ConsumerWidget {
     final wide = MediaQuery.sizeOf(context).width >= 900;
 
     final appBar = AppBar(
-      title: Text(selected >= 0 ? items[selected].label : 'Brightloop'),
+      title: Text(selected >= 0 ? items[selected].label : Brand.name),
       actions: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -44,9 +45,7 @@ class AppShell extends ConsumerWidget {
         drawer: Drawer(
           child: ListView(
             children: [
-              const DrawerHeader(
-                child: Text('Brightloop', style: TextStyle(fontSize: 22)),
-              ),
+              const DrawerHeader(child: BrandMark()),
               for (final (i, item) in items.indexed)
                 ListTile(
                   leading: Icon(item.icon),

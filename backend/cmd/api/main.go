@@ -1,4 +1,4 @@
-// Command api starts the Brightloop HTTP server and the billing scheduler.
+// Command api starts the Subly HTTP server and the billing scheduler.
 //
 // Wiring order: config → database → repositories → services → handlers → router.
 package main
@@ -23,6 +23,7 @@ import (
 	"github.com/brightloop/subscriptions/backend/pkg/clock"
 	"github.com/brightloop/subscriptions/backend/pkg/hash"
 	"github.com/brightloop/subscriptions/backend/pkg/jwtutil"
+	"github.com/brightloop/subscriptions/backend/pkg/mailer"
 )
 
 func main() {
@@ -47,18 +48,32 @@ func run() error {
 	clk := clock.Real{Loc: cfg.Location}
 	jwtMgr := jwtutil.New(cfg.JWTSecret, cfg.JWTTTL)
 	hasher := hash.New(cfg.BcryptCost)
+	mail := mailer.NewSMTP(cfg.SMTPHost, cfg.SMTPPort, cfg.MailFrom, cfg.MailFromName, cfg.SMTPUsername, cfg.SMTPPassword)
 
-	// Repositories
 	// Repositories
 	userRepo := repository.NewUserRepo()
 	customerRepo := repository.NewCustomerRepo()
-	paymentRepo := repository.NewPaymentRepo()
-	invoiceRepo := repository.NewInvoiceRepo()
+  paymentRepo := repository.NewPaymentRepo()
+  invoiceRepo := repository.NewInvoiceRepo()
+  resetTokenRepo := repository.NewResetTokenRepo()
 
-	// Services
-	// Services
-	authSvc := service.NewAuthService(db, userRepo, customerRepo, hasher, jwtMgr, clk)
-	paymentSvc := service.NewPaymentService(db, paymentRepo, invoiceRepo)
+  // Services
+  authSvc := service.NewAuthService(service.AuthDeps{
+      DB:            db,
+      Users:         userRepo,
+      Customers:     customerRepo,
+      ResetTokens:   resetTokenRepo,
+      Hasher:        hasher,
+      JWT:           jwtMgr,
+      Clock:         clk,
+      Mailer:        mail,
+      FrontendURL:   cfg.FrontendURL,
+      ResetTTL:      cfg.ResetTokenTTL,
+      ShowCodesInEmail: cfg.EmailShowCodes,
+   })
+
+   paymentSvc := service.NewPaymentService(db, paymentRepo, invoiceRepo)
+   staffSvc := service.NewStaffService(db, userRepo, hasher, authSvc, cfg.InviteTokenTTL)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -70,14 +85,15 @@ func run() error {
 	}
 
 	// HTTP
-	// HTTP
 	engine := router.New(router.Deps{
-		Config:  cfg,
-		DB:      db,
-		JWT:     jwtMgr,
-		Auth:    handler.NewAuthHandler(authSvc),
-		Payment: handler.NewPaymentHandler(paymentSvc),
-	})
+    Config:   cfg,
+    DB:       db,
+    JWT:      jwtMgr,
+    Sessions: authSvc,
+    Auth:     handler.NewAuthHandler(authSvc),
+    Staff:    handler.NewStaffHandler(staffSvc),
+    Payment:  handler.NewPaymentHandler(paymentSvc),
+	 })
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
 
 	// Background jobs

@@ -20,21 +20,29 @@ import (
 	"github.com/brightloop/subscriptions/backend/pkg/clock"
 	"github.com/brightloop/subscriptions/backend/pkg/hash"
 	"github.com/brightloop/subscriptions/backend/pkg/jwtutil"
+	"github.com/brightloop/subscriptions/backend/pkg/mailer"
 )
 
-type AuthService struct {
-	db        *gorm.DB
-	users     *repository.UserRepo
-	customers *repository.CustomerRepo
-	hasher    *hash.Hasher
-	jwt       *jwtutil.Manager
-	clock     clock.Clock
+// AuthDeps groups everything AuthService needs, so adding a dependency
+// doesn't change every call site.
+type AuthDeps struct {
+	DB          *gorm.DB
+	Users       *repository.UserRepo
+	Customers   *repository.CustomerRepo
+	ResetTokens *repository.ResetTokenRepo
+	Hasher      *hash.Hasher
+	JWT         *jwtutil.Manager
+	Clock       clock.Clock
+	Mailer      mailer.Mailer
+	FrontendURL string
+	ResetTTL    time.Duration
+	// ShowCodesInEmail adds the raw reset/invite code to emails for API testing.
+	ShowCodesInEmail bool
 }
 
-func NewAuthService(db *gorm.DB, users *repository.UserRepo, customers *repository.CustomerRepo,
-	hasher *hash.Hasher, jwt *jwtutil.Manager, clk clock.Clock) *AuthService {
-	return &AuthService{db: db, users: users, customers: customers, hasher: hasher, jwt: jwt, clock: clk}
-}
+type AuthService struct{ AuthDeps }
+
+func NewAuthService(d AuthDeps) *AuthService { return &AuthService{d} }
 
 // Register creates a customer login and its customer record in ONE transaction:
 // either both rows exist afterwards or neither does.
@@ -47,26 +55,26 @@ func (s *AuthService) Register(ctx context.Context, in dto.RegisterRequest) (*mo
 		return nil, apperr.Validation("Some fields are invalid", map[string]string{"password": reason})
 	}
 
-	hashed, err := s.hasher.Hash(in.Password)
+	hashed, err := s.Hasher.Hash(in.Password)
 	if err != nil {
 		return nil, err
 	}
 
 	var user *models.User
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		existing, err := s.users.FindByEmail(tx, email)
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		taken, err := s.Users.EmailTaken(tx, email, 0)
 		if err != nil {
 			return err
 		}
-		if existing != nil {
-			return apperr.Conflict("email already registered")
+		if taken {
+			return emailTaken()
 		}
 
 		user = &models.User{Email: email, PasswordHash: hashed, FullName: in.FullName,
 			Role: models.RoleCustomer, IsActive: true}
-		if err := s.users.Create(tx, user); err != nil {
+		if err := s.Users.Create(tx, user); err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) { // lost a race with another sign-up
-				return apperr.Conflict("email already registered")
+				return emailTaken()
 			}
 			return err
 		}
@@ -75,7 +83,7 @@ func (s *AuthService) Register(ctx context.Context, in dto.RegisterRequest) (*mo
 		if in.Phone != "" {
 			cust.Phone = &in.Phone
 		}
-		if err := s.customers.Create(tx, cust); err != nil {
+		if err := s.Customers.Create(tx, cust); err != nil {
 			return err
 		}
 		user.Customer = cust
@@ -87,34 +95,58 @@ func (s *AuthService) Register(ctx context.Context, in dto.RegisterRequest) (*mo
 // Login checks credentials and issues a JWT. Wrong email and wrong password
 // return the SAME error so attackers can't discover which emails exist.
 func (s *AuthService) Login(ctx context.Context, in dto.LoginRequest) (*dto.LoginResponse, error) {
-	db := s.db.WithContext(ctx)
-	user, err := s.users.FindByEmail(db, in.Email)
+	db := s.DB.WithContext(ctx)
+	email := validator.NormalizeEmail(in.Email)
+	if email == "" {
+		return nil, apperr.Unauthenticated("invalid email or password")
+	}
+	user, err := s.Users.FindByEmail(db, email)
 	if err != nil {
 		return nil, err
 	}
-	if user == nil || !s.hasher.Matches(user.PasswordHash, in.Password) {
+	if user == nil || !s.Hasher.Matches(user.PasswordHash, in.Password) {
 		return nil, apperr.Unauthenticated("invalid email or password")
 	}
 	if !user.IsActive {
 		return nil, apperr.Forbidden("account deactivated")
 	}
 
+	_ = s.Users.TouchLastLogin(db, user.ID, s.Clock.Now())
+	return s.issueToken(user)
+}
+
+func (s *AuthService) issueToken(user *models.User) (*dto.LoginResponse, error) {
 	var customerID *int64
 	if user.Customer != nil {
 		customerID = &user.Customer.ID
 	}
-	now := s.clock.Now()
-	token, exp, err := s.jwt.Issue(user.ID, string(user.Role), customerID, now)
+	token, exp, err := s.JWT.Issue(user.ID, string(user.Role), customerID, s.Clock.Now())
 	if err != nil {
 		return nil, err
 	}
-	_ = s.users.TouchLastLogin(db, user.ID, now)
-
 	return &dto.LoginResponse{AccessToken: token, ExpiresAt: exp, User: dto.NewUserResponse(user)}, nil
 }
 
+// CheckSession is called by the auth middleware on every request. A valid
+// signature isn't enough: the account must still be active and the token must
+// have been issued after the last password change/reset.
+func (s *AuthService) CheckSession(ctx context.Context, userID int64, issuedAt time.Time) error {
+	u, err := s.Users.SessionState(s.DB.WithContext(ctx), userID)
+	if err != nil {
+		return err
+	}
+	if u == nil || !u.IsActive {
+		return apperr.Unauthenticated("account is no longer active")
+	}
+	// JWT "iat" has millisecond precision (see pkg/jwtutil), so compare at that precision.
+	if u.PasswordChangedAt != nil && issuedAt.Before(u.PasswordChangedAt.Truncate(time.Millisecond)) {
+		return apperr.Unauthenticated("session expired, please log in again")
+	}
+	return nil
+}
+
 func (s *AuthService) Me(ctx context.Context, userID int64) (*models.User, error) {
-	u, err := s.users.FindByID(s.db.WithContext(ctx), userID)
+	u, err := s.Users.FindByID(s.DB.WithContext(ctx), userID)
 	if err != nil {
 		return nil, err
 	}
@@ -124,26 +156,95 @@ func (s *AuthService) Me(ctx context.Context, userID int64) (*models.User, error
 	return u, nil
 }
 
+// UpdateProfile changes the caller's own name and, for customers, their
+// billing details. Email changes are not allowed here (they'd need verification).
+func (s *AuthService) UpdateProfile(ctx context.Context, userID int64, in dto.UpdateProfileRequest) (*models.User, error) {
+	user, err := s.Me(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	isCustomer := user.Customer != nil
+	if !isCustomer && (in.Phone != nil || in.CompanyName != nil || in.BillingAddress != nil || in.GSTIN != nil) {
+		return nil, apperr.Validation("Only customers have billing details",
+			map[string]string{"body": "only full_name can be changed for staff and admin accounts"})
+	}
+
+	userFields := map[string]any{}
+	custFields := map[string]any{}
+	if in.FullName != nil {
+		userFields["full_name"] = *in.FullName
+		custFields["name"] = *in.FullName // keep the customer record's name in sync
+	}
+	if in.Phone != nil {
+		custFields["phone"] = nullIfEmpty(*in.Phone)
+	}
+	if in.CompanyName != nil {
+		custFields["company_name"] = nullIfEmpty(*in.CompanyName)
+	}
+	if in.BillingAddress != nil {
+		custFields["billing_address"] = nullIfEmpty(*in.BillingAddress)
+	}
+	if in.GSTIN != nil {
+		if *in.GSTIN == "" {
+			custFields["gstin"] = nil
+		} else if g := validator.GSTIN(*in.GSTIN); g == "" {
+			return nil, apperr.Validation("Some fields are invalid", map[string]string{"gstin": "is not a valid GSTIN"})
+		} else {
+			custFields["gstin"] = g
+		}
+	}
+
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(userFields) > 0 {
+			if err := s.Users.Update(tx, userID, userFields); err != nil {
+				return err
+			}
+		}
+		if isCustomer && len(custFields) > 0 {
+			return s.Customers.Update(tx, user.Customer.ID, custFields)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.Me(ctx, userID)
+}
+
 // EnsureAdmin creates the first admin from SEED_ADMIN_* env vars if no admin exists.
 // Only the admin can create staff, so the system needs one admin to start with.
 func (s *AuthService) EnsureAdmin(ctx context.Context, email, password string) (created bool, err error) {
 	if email == "" || password == "" {
 		return false, nil
 	}
-	db := s.db.WithContext(ctx)
-	n, err := s.users.CountByRole(db, models.RoleAdmin)
+	db := s.DB.WithContext(ctx)
+	n, err := s.Users.CountByRole(db, models.RoleAdmin)
 	if err != nil || n > 0 {
 		return false, err
 	}
 	if reason := validator.Password(password); reason != "" {
 		return false, errors.New("SEED_ADMIN_PASSWORD " + reason)
 	}
-	hashed, err := s.hasher.Hash(password)
+	hashed, err := s.Hasher.Hash(password)
 	if err != nil {
 		return false, err
 	}
-	now := time.Now()
+	now := s.Clock.Now()
 	u := &models.User{Email: validator.NormalizeEmail(email), PasswordHash: hashed, FullName: "Administrator",
 		Role: models.RoleAdmin, IsActive: true, PasswordChangedAt: &now}
-	return true, s.users.Create(db, u)
+	return true, s.Users.Create(db, u)
+}
+
+func emailTaken() error {
+	e := apperr.Conflict("email already registered")
+	e.Details = map[string]string{"email": "is already registered"}
+	return e
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

@@ -5,6 +5,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -85,4 +86,14 @@ func Health(db *gorm.DB) gin.HandlerFunc {
 		}
 		response.OK(c, gin.H{"status": "ok", "database": "ok"})
 	}
+}
+
+// pathID reads a positive integer ":id" path parameter, or writes a 400.
+func pathID(c *gin.Context) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.Error(c, apperr.Validation("Invalid id", map[string]string{"id": "must be a positive number"}))
+		return 0, false
+	}
+	return id, true
 }
