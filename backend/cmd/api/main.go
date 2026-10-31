@@ -53,14 +53,26 @@ func run() error {
 	// Repositories
 	userRepo := repository.NewUserRepo()
 	customerRepo := repository.NewCustomerRepo()
+	paymentRepo := repository.NewPaymentRepo()
+	invoiceRepo := repository.NewInvoiceRepo()
 	resetTokenRepo := repository.NewResetTokenRepo()
 
 	// Services
 	authSvc := service.NewAuthService(service.AuthDeps{
-		DB: db, Users: userRepo, Customers: customerRepo, ResetTokens: resetTokenRepo,
-		Hasher: hasher, JWT: jwtMgr, Clock: clk, Mailer: mail,
-		FrontendURL: cfg.FrontendURL, ResetTTL: cfg.ResetTokenTTL, ShowCodesInEmail: cfg.EmailShowCodes,
+		DB:               db,
+		Users:            userRepo,
+		Customers:        customerRepo,
+		ResetTokens:      resetTokenRepo,
+		Hasher:           hasher,
+		JWT:              jwtMgr,
+		Clock:            clk,
+		Mailer:           mail,
+		FrontendURL:      cfg.FrontendURL,
+		ResetTTL:         cfg.ResetTokenTTL,
+		ShowCodesInEmail: cfg.EmailShowCodes,
 	})
+
+	paymentSvc := service.NewPaymentService(db, paymentRepo, invoiceRepo)
 	staffSvc := service.NewStaffService(db, userRepo, hasher, authSvc, cfg.InviteTokenTTL)
 	customerSvc := service.NewCustomerService(db, customerRepo, userRepo, clk)
 	taxRepo := repository.NewTaxRepo()
@@ -85,15 +97,15 @@ func run() error {
 
 	// HTTP
 	engine := router.New(router.Deps{
-		Config:   cfg,
-		DB:       db,
-		JWT:      jwtMgr,
-		Sessions: authSvc,
-		Auth:     handler.NewAuthHandler(authSvc),
-		Staff:    handler.NewStaffHandler(staffSvc),
-
+		Config:    cfg,
+		DB:        db,
+		JWT:       jwtMgr,
+		Sessions:  authSvc,
+		Auth:      handler.NewAuthHandler(authSvc),
+		Staff:     handler.NewStaffHandler(staffSvc),
 		Customers: handler.NewCustomerHandler(customerSvc),
 		Taxes:     handler.NewTaxHandler(taxSvc),
+		Payment:   handler.NewPaymentHandler(paymentSvc),
 		Products:  handler.NewProductHandler(productSvc),
 		Plans:     handler.NewPlanHandler(planSvc),
 		Templates: handler.NewTemplateHandler(templateSvc),

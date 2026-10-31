@@ -12,5 +12,5 @@ func registerInvoiceRoutes(rg *gin.RouterGroup, d Deps) {
 	g.POST("/:id/send", todo("send invoice"))
 	g.GET("/:id/pdf", todo("invoice pdf"))
 	// Payments are recorded against an invoice (Module 8).
-	g.POST("/:id/payments", todo("record payment"))
+	g.POST("/:id/payments", d.Payment.RecordPayment)
 }

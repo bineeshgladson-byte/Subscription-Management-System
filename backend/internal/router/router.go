@@ -29,6 +29,7 @@ type Deps struct {
 	Staff     *handler.StaffHandler
 	Customers *handler.CustomerHandler
 	Taxes     *handler.TaxHandler
+	Payment   *handler.PaymentHandler
 	Products  *handler.ProductHandler
 	Plans     *handler.PlanHandler
 	Templates *handler.TemplateHandler
