@@ -338,3 +338,16 @@ filters and a summary view … every page should still respond in under two seco
 ## 10. Open decisions (team)
 1. Confirm module ownership (A0). 2. Staff see no financial totals? 3. Scheduled invoices auto-confirmed (`INVOICE_AUTO_CONFIRM=true`)?
 4. Quotations stored in `subscriptions` (ADR-001)? 5. ~~Unique product names?~~ Decided: unique among active products (decision 10); reversible.
+
+---
+
+## 11. Implemented Features (Quotations, Subscriptions, Invoices, Payments & Razorpay)
+- **Quotations:** Backend CRUD, NextSequence generator (`QT/YYYY/00001`), line resolution, calculate subtotal/tax/discount/total, list/filter, send, confirm-to-subscription, cancel. Frontend full UI screen with dialogs.
+- **Subscriptions:** Backend NextSequence generator (`SUB/YYYY/00001`), lifecycle transitions (Draft → Quotation → Confirmed → Active → Closed/Paused/Renewed), and on-demand `BillNow` invoice generation. Frontend full UI screen with lifecycle action controls.
+- **Invoices:** Backend NextSequence generator (`INV/YYYY/00001`), period start/end tracking, overdue calculation, line item generation, confirm, cancel, send, and PDF/HTML generation. Frontend full UI screen with overdue badge and payment actions.
+- **Payments & Razorpay:**
+  - Manual payment recording: UPI, Bank Transfer, Card, Cash with auto-application against invoice due amounts (`PAY/YYYY/00001`).
+  - Razorpay Online Checkout: integrated with key `rzp_test_TuNhl7wCahhafO` and secret `LwRFRG06o0FB5duWLv76e8cd`.
+  - Backend creates Razorpay order via Razorpay API (`POST /invoices/:id/razorpay/order`) and verifies HMAC SHA256 signature (`POST /invoices/:id/razorpay/verify`).
+  - Frontend triggers browser Razorpay modal popup via `dart:js` and refreshes invoice to Paid on completion.
+

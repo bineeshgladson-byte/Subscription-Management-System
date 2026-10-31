@@ -2,15 +2,17 @@ package router
 
 import "github.com/gin-gonic/gin"
 
-// Owner: Backend 2 — Module 6
 func registerInvoiceRoutes(rg *gin.RouterGroup, d Deps) {
 	g := rg.Group("/invoices", adminOrStaff)
-	g.GET("", todo("list invoices"))
-	g.GET("/:id", todo("get invoice"))
-	g.POST("/:id/confirm", todo("confirm invoice"))
-	g.POST("/:id/cancel", todo("cancel invoice"))
-	g.POST("/:id/send", todo("send invoice"))
-	g.GET("/:id/pdf", todo("invoice pdf"))
-	// Payments are recorded against an invoice (Module 8).
-	g.POST("/:id/payments", todo("record payment"))
+	g.GET("", d.Invoices.List)
+	g.GET("/:id", d.Invoices.Get)
+	g.POST("/:id/confirm", d.Invoices.Confirm)
+	g.POST("/:id/cancel", d.Invoices.Cancel)
+	g.POST("/:id/send", d.Invoices.Send)
+	g.GET("/:id/pdf", d.Invoices.PDF)
+	g.POST("/:id/payments", d.Invoices.RecordPayment)
+
+	// Razorpay online checkout endpoints for invoices
+	g.POST("/:id/razorpay/order", d.Invoices.RazorpayOrder)
+	g.POST("/:id/razorpay/verify", d.Invoices.RazorpayVerify)
 }

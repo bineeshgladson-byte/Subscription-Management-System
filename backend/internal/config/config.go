@@ -43,6 +43,9 @@ type Config struct {
 
 	SeedAdminEmail    string
 	SeedAdminPassword string
+
+	RazorpayKeyID     string
+	RazorpayKeySecret string
 }
 
 func (c Config) IsDev() bool { return c.AppEnv == "development" }
@@ -78,6 +81,8 @@ func Load() (Config, error) {
 		CORSAllowedOrigins: split(get("CORS_ALLOWED_ORIGINS", "http://localhost:5000")),
 		SeedAdminEmail:     os.Getenv("SEED_ADMIN_EMAIL"),
 		SeedAdminPassword:  os.Getenv("SEED_ADMIN_PASSWORD"),
+		RazorpayKeyID:      get("RAZORPAY_KEY_ID", "rzp_test_TuNhl7wCahhafO"),
+		RazorpayKeySecret:  get("RAZORPAY_KEY_SECRET", "LwRFRG06o0FB5duWLv76e8cd"),
 	}
 
 	// Default: show codes in development only. Override with EMAIL_SHOW_CODES=true|false.

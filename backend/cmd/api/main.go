@@ -70,9 +70,19 @@ func run() error {
 	productSvc := service.NewProductService(db, productRepo, taxRepo, planRepo)
 	planSvc := service.NewPlanService(db, planRepo, productRepo, clk)
 	discountRepo := repository.NewDiscountRepo()
-	templateSvc := service.NewTemplateService(db, repository.NewTemplateRepo(), planRepo, productRepo)
+	templateRepo := repository.NewTemplateRepo()
+	subRepo := repository.NewSubscriptionRepo()
+	invoiceRepo := repository.NewInvoiceRepo()
+	paymentRepo := repository.NewPaymentRepo()
+
+	templateSvc := service.NewTemplateService(db, templateRepo, planRepo, productRepo)
 	discountSvc := service.NewDiscountService(db, discountRepo, productRepo, clk)
 	pricingSvc := service.NewPricingService(db, productRepo, discountRepo, clk)
+
+	subSvc := service.NewSubscriptionService(db, subRepo, customerRepo, planRepo, templateRepo, productRepo, discountRepo, mail)
+	invSvc := service.NewInvoiceService(db, invoiceRepo, subRepo, customerRepo, cfg.InvoiceAutoConfirm, mail)
+	subSvc.SetInvoiceGenerator(invSvc)
+	paySvc := service.NewPaymentService(db, paymentRepo, invoiceRepo, customerRepo, cfg.RazorpayKeyID, cfg.RazorpayKeySecret)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -92,12 +102,16 @@ func run() error {
 		Auth:     handler.NewAuthHandler(authSvc),
 		Staff:    handler.NewStaffHandler(staffSvc),
 
-		Customers: handler.NewCustomerHandler(customerSvc),
-		Taxes:     handler.NewTaxHandler(taxSvc),
-		Products:  handler.NewProductHandler(productSvc),
-		Plans:     handler.NewPlanHandler(planSvc),
-		Templates: handler.NewTemplateHandler(templateSvc),
-		Discounts: handler.NewDiscountHandler(discountSvc, pricingSvc),
+		Customers:     handler.NewCustomerHandler(customerSvc),
+		Taxes:         handler.NewTaxHandler(taxSvc),
+		Products:      handler.NewProductHandler(productSvc),
+		Plans:         handler.NewPlanHandler(planSvc),
+		Templates:     handler.NewTemplateHandler(templateSvc),
+		Discounts:     handler.NewDiscountHandler(discountSvc, pricingSvc),
+		Quotations:    handler.NewQuotationHandler(subSvc),
+		Subscriptions: handler.NewSubscriptionHandler(subSvc),
+		Invoices:      handler.NewInvoiceHandler(invSvc, paySvc),
+		Payments:      handler.NewPaymentHandler(paySvc, invSvc),
 	})
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
 
