@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,10 +13,10 @@ import '../data/invoices_api.dart';
 
 class InvoicesScreen extends ConsumerStatefulWidget {
   const InvoicesScreen({super.key});
-
   @override
   ConsumerState<InvoicesScreen> createState() => _InvoicesScreenState();
 }
+
 
 class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
   InvoiceQuery _q = (q: '', status: null, overdue: null, customerId: null, page: 1);

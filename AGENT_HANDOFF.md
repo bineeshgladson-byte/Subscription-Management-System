@@ -2,7 +2,7 @@
 
 > **For any AI or developer picking this up:** read this whole file before touching code.
 > It is updated after **every** completed step. The newest entry in the step log (section 7) is at the top.
-> Last updated: **2026-10-31**, after **A5 Templates + A6 Discounts/pricing** (backend) and **frontend wired to the live API**.
+> Last updated: **2026-10-31**, after **A7–A12 (quotations → subscriptions → invoices → payments → dashboard → billing run)**, backend + admin panel.
 
 ---
 
@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| **Current step** | Backend A1–A6 ✅ (customers, taxes, products, plans, quotation templates, discounts + pricing engine). **Frontend now uses the live API for every built module: no sample data.** Next (Ashlin): **A11 Dashboard/reports + A12 admin billing run**, or help A7–A10 (teammates). See section 8. |
+| **Current step** | **Admin panel complete end to end** (hackathon deadline push): quotations → confirm → active subscription + first invoice → automatic recurring invoices (billing run / hourly cron) → record payments (Gayatri's code) → paid; dashboard with MRR/ARR/revenue/outstanding/overdue. Not done for lack of time: OpenAPI + Postman entries for A7–A12, customer `/me/*` portal (Phase C). |
 | **Branch** | `ashlin_dev` (Ashlin's backend branch). `main` is the team integration branch. |
 | **Uncommitted work** | Everything from A3 handlers through A6 plus the frontend wiring (see the step log for files). Also modified but **not by the backend/wiring agent**: `frontend/lib/core/theme/app_theme.dart`, `features/auth/presentation/{auth_card,login_screen}.dart`, `auth/presentation/widgets/{brand_logo,logo_video_loader}.dart` (someone else's auth-UI work; leave as is). Ashlin commits by hand; see R1 and `git status`. |
 | **Is it running?** | `make dev` = backend (hot reload) + Flutter. Health: `curl localhost:8080/health` |
@@ -147,9 +147,9 @@ docs/api/openapi.yaml        THE API contract (validated with openapi-spec-valid
 | **A5 Quotation templates** | ✅ built | `/quotation-templates` list/get/create/update, DELETE = deactivate | lines default to the plan's products; `estimated_total` |
 | **A6 Discounts + pricing engine** | ✅ built | `/discounts` CRUD (admin), `/discounts/:id/usages`, `POST /pricing/preview` (admin + staff) | pure `service.Price()`; `DiscountRepo.ReserveUse/ReleaseUse` ready for invoices (A9) |
 | **Frontend wired to the API** | ✅ built | Dashboard, Customers, Staff, Products (+variants), Taxes, Plans, Templates, Discounts, Price calculator, Profile | quotations/subscriptions/invoices/payments/reports/settings stay placeholders until their APIs exist |
-| A7 Quotations · A8 Subscriptions | 🟡 Bineesh | | his branch has a subscription repo/service/handler |
-| A9 Billing/invoices · A10 Payments | 🟡 Gayatri | | her branch has record-payment |
-| A11 Dashboard · A12 Admin billing run | ⏳ planned (Ashlin) | | |
+| **A7 Quotations · A8 Subscriptions** | ✅ built by Ashlin's agent (Bineesh's branch NOT merged; it would conflict in routes_subscriptions.go/main.go) | `/quotations` list/create/get/send/confirm/cancel; `/subscriptions` list/get/pause/resume/close/renew/bill-now | `service/sales_service.go` |
+| **A9 Billing/invoices · A10 Payments** | ✅ | `/invoices` list/get/confirm/cancel/send, `POST /invoices/:id/payments` (Gayatri's files copied verbatim from `gayatri_billing`), `GET /payments` | billing engine in `sales_service.go` (`billNextPeriod`, `RunBilling`) |
+| **A11 Dashboard · A12 Admin billing run** | ✅ | `GET /dashboard/summary?from&to` (money admin-only), `POST /admin/billing/run {as_of}` (as_of dev-only); scheduler calls `RunBilling` hourly + daily | |
 | Phase B Staff flow audit · Phase C Customer `/me/*` | ⏳ after Phase A | | |
 
 **Tests right now:** backend 15 integration tests pass (`make be-itest`; new: `TestQuotationTemplates`,
@@ -197,6 +197,34 @@ Postman: 140 requests / 16 folders; folders 0,1,2,5,11–15 = 90 requests / 165 
 ---
 
 ## 7. Step log (newest first)
+
+### 2026-10-31 · Menu clean-up ✅ (uncommitted)
+- Removed the Reports page (placeholder; the dashboard is the summary view) and the notifications bell (no feature behind it).
+- Customers no longer see Subscriptions / Invoices / Payments in the menu: those pages use staff endpoints and the customer
+  portal (`/me/*`) isn't built. Customer menu = Dashboard, Plans, Profile. Route test updated.
+
+### 2026-10-31 · A7–A12 + admin panel (deadline push) ✅ (uncommitted)
+- **Backend:** `dto/sales.go`, `service/sales_service.go` (quotations, lifecycle, billing engine, invoices, payments list,
+  dashboard), `handler/sales_handler.go`; routes `routes_{quotations,subscriptions,invoices,payments,reports,admin}.go`;
+  `jobs/scheduler.go` now takes a `BillingFunc` (main.go passes `salesSvc.RunBilling`).
+- **Gayatri's files copied unchanged** from `origin/gayatri_billing` (so a later merge of her branch has no add/add conflicts):
+  `dto/payment.go`, `handler/payment_handler.go`, `repository/{invoice_repo,payment_repo}.go`, `service/payment_service.go`.
+  Router field name `Payment` matches her branch.
+- **Billing:** confirm → if start ≤ today: activate + bill the first period. Each period is billed in one tx: lock (SKIP LOCKED) →
+  price via `Price()` with `Eligible(periodStart)` → `ReserveUse` (re-price if a discount ran out) → invoice + items +
+  discount_usages → advance `next_billing_date` / `cycles_billed` / auto-close. Catch-up loop (cap 400). Invoices are
+  auto-confirmed when `INVOICE_AUTO_CONFIRM=true` (default), due = invoice date + payment_terms_days; emailed in the background.
+  `RunBilling` also activates due confirmed subs and closes expired quotations. Cancel invoice (unpaid only) releases discount uses.
+- **Test:** `tests/integration/sales_test.go` `TestAdminFlow` (quote → confirm → invoice 1839.62 → no duplicates on 3 reruns →
+  overpay 422 → partial → paid → 3-month catch-up = exactly 3 more invoices even when run twice → pause/resume → non-pausable
+  422 → close → cancel invoice → dashboard money admin-only → staff 403 billing run). All 16 integration tests pass.
+- **Frontend:** `features/sales/data/sales_api.dart`, `sales/presentation/sales_widgets.dart`; screens Quotations (create from
+  plan/template/custom lines, send, confirm, cancel), Subscriptions (detail with bill now/pause/resume/renew/close + invoices),
+  Invoices (filters, overdue chip, detail, confirm, cancel, send, printable view, record payment with Idempotency-Key),
+  Payments list, Settings (run billing as of a date), Dashboard finance block (`_Finance`, date range).
+  17 widget tests + live API test (`LIVE_API=…`) pass; web build OK.
+- DB wiped again afterwards (only admin left).
+
 
 ### 2026-10-31 · A5 + A6 backend, frontend wired to the live API ✅ (uncommitted)
 - **Backend A5:** migration `20261101000500_templates_unique_name_ci`; seed copies the plan's products into the

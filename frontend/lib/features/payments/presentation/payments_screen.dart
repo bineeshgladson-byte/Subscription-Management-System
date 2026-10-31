@@ -10,6 +10,12 @@ import '../data/payments_api.dart';
 
 class PaymentsScreen extends ConsumerStatefulWidget {
   const PaymentsScreen({super.key});
+  @override
+  ConsumerState<PaymentsScreen> createState() => _PaymentsScreenState();
+}
+
+class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
+  PaymentQuery _q = (q: '', method: null, page: 1);
 
   @override
   ConsumerState<PaymentsScreen> createState() => _PaymentsScreenState();

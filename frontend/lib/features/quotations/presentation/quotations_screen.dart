@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+<<<<<<< HEAD
 import '../../../core/models/role.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/async_view.dart';
@@ -10,8 +11,30 @@ import '../../customers/data/customers_api.dart';
 import '../../plans/data/plans_api.dart';
 import '../data/quotations_api.dart';
 
+=======
+import '../../../core/network/api_client.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/ui_kit.dart';
+import '../../customers/data/customers_api.dart';
+import '../../plans/data/plans_api.dart';
+import '../../products/data/products_api.dart';
+import '../../products/presentation/line_editor.dart';
+import '../../sales/data/sales_api.dart';
+import '../../sales/presentation/sales_widgets.dart';
+import '../../subscriptions/presentation/subscriptions_screen.dart';
+import '../../templates/data/templates_api.dart';
+
+/// Quotations: Draft → Quotation (sent) → Confirmed (becomes a subscription and is billed).
+>>>>>>> origin/main
 class QuotationsScreen extends ConsumerStatefulWidget {
   const QuotationsScreen({super.key});
+  @override
+  ConsumerState<QuotationsScreen> createState() => _QuotationsScreenState();
+}
+
+class _QuotationsScreenState extends ConsumerState<QuotationsScreen> {
+  SubQuery _q = (q: '', status: null, page: 1);
 
   @override
   ConsumerState<QuotationsScreen> createState() => _QuotationsScreenState();
@@ -139,8 +162,58 @@ class _QuotationsScreenState extends ConsumerState<QuotationsScreen> {
             ),
           ],
         ),
+<<<<<<< HEAD
       ),
+=======
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Choose product lines myself'),
+          subtitle: const Text(
+            'Off: lines come from the template, or from the plan.',
+          ),
+          value: custom,
+          onChanged: (v) => setState(() => custom = v),
+        ),
+        if (custom)
+          LineEditor(
+            products: products,
+            lines: lines,
+            onChanged: () => setState(() {}),
+            allowOverride: true,
+            overrideLabel: 'Unit price',
+            errors: e,
+            errorKey: 'items',
+          ),
+      ],
+      onSave: () async {
+        await ref.read(salesRepositoryProvider).createQuotation({
+          'customer_id': customerId,
+          'plan_id': planId,
+          'template_id': ?templateId,
+          'start_date': start.text.trim(),
+          if (expiry.text.trim().isNotEmpty) 'expiry_date': expiry.text.trim(),
+          if (terms.text.trim().isNotEmpty)
+            'payment_terms_days': int.parse(terms.text.trim()),
+          if (custom)
+            'items': [
+              for (final l in lines)
+                ?l.toJson(withOverride: true, overrideKey: 'unit_price'),
+            ],
+        });
+        return true;
+      },
+>>>>>>> origin/main
     );
+    for (final c in [start, expiry, terms]) {
+      c.dispose();
+    }
+    for (final l in lines) {
+      l.dispose();
+    }
+    if (saved == true && mounted) {
+      invalidateSales(ref);
+      showMessage(context, 'Quotation created as a draft');
+    }
   }
 
   String _statusTone(String status) => switch (status) {

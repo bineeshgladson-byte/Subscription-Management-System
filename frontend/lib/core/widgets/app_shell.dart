@@ -270,30 +270,6 @@ class _Topbar extends StatelessWidget {
             ),
           ),
         const Spacer(),
-        IconButton.filledTonal(
-          tooltip: 'Notifications',
-          style: IconButton.styleFrom(
-            backgroundColor: const Color(0xFFF3F4F8),
-            foregroundColor: WorkspaceTheme.muted,
-          ),
-          icon: const Icon(Icons.notifications_none_outlined, size: 18),
-          onPressed: () => showDialog<void>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('You’re all caught up'),
-              content: const Text(
-                'New subscription and billing notifications will appear here.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Close'),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
         Consumer(
           builder: (context, ref, _) => PopupMenuButton<String>(
             tooltip: 'Account menu',
