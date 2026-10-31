@@ -30,6 +30,9 @@ func parseMoney(raw string, allowNegative bool) (decimal.Decimal, string) {
 
 // parseDate reads "YYYY-MM-DD". Dates are stored as UTC midnight so the
 // DATE column never shifts a day because of time zones.
+// ParseDate is exported for handlers (query filters).
+func ParseDate(raw string) (time.Time, bool) { return parseDate(raw) }
+
 func parseDate(raw string) (time.Time, bool) {
 	t, err := time.Parse("2006-01-02", strings.TrimSpace(raw))
 	return t, err == nil

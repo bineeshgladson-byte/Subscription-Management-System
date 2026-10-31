@@ -136,6 +136,7 @@ type QuotationTemplate struct {
 	IsActive         bool
 	Timestamps
 
+	Plan  *SubscriptionPlan
 	Lines []QuotationTemplateLine `gorm:"foreignKey:TemplateID"`
 }
 
@@ -145,6 +146,9 @@ type QuotationTemplateLine struct {
 	ProductID  int64
 	VariantID  *int64
 	Quantity   int
+
+	Product *Product
+	Variant *ProductVariant
 }
 
 // ---------- Subscriptions (quotations are subscriptions in draft/quotation state) ----------

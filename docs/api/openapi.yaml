@@ -12,7 +12,7 @@ info:
     - Lists accept page, page_size (max 100), sort (e.g. -created_at).
     - Roles are listed in each operation's description; the backend enforces them.
 
-    Status: auth, staff, customers and taxes are implemented. A few other core endpoints are specified. Every other endpoint
+    Status: auth, staff, customers, taxes, products, plans, quotation templates, discounts and price preview are implemented. A few other core endpoints are specified. Every other endpoint
     in the architecture plan is registered in backend/internal/router and returns
     501 until implemented; add its spec here when you start on it.
 servers:
@@ -29,6 +29,8 @@ tags:
   - name: Taxes
   - name: Products
   - name: Plans
+  - name: Quotation templates
+  - name: Discounts
   - name: Invoices
   - name: Payments
   - name: Dashboard
@@ -602,14 +604,16 @@ paths:
   /products:
     get:
       tags: [Products]
-      summary: List products
-      description: 'Roles: admin, staff.'
+      summary: List products (with variants)
+      description: 'Roles: admin, staff. Staff get cost_price and margin as null. Archived products are hidden unless status=archived|all.'
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
-        - $ref: '#/components/parameters/Sort'
-        - { name: q, in: query, schema: { type: string } }
-        - { name: status, in: query, schema: { type: string, enum: [active, archived] } }
+        - { name: sort, in: query, description: 'name | sales_price | created_at, prefix - for descending', schema: { type: string } }
+        - { name: q, in: query, description: search name or description, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [active, archived, all], default: active } }
+        - { name: product_type, in: query, schema: { type: string, enum: [software, service, addon] } }
+        - { name: tax_id, in: query, schema: { type: integer, format: int64 } }
       responses:
         '200':
           description: OK
@@ -622,12 +626,14 @@ paths:
                     properties:
                       data: { type: array, items: { $ref: '#/components/schemas/Product' } }
                       meta: { $ref: '#/components/schemas/PageMeta' }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [Products]
-      summary: Create product with variants
-      description: 'Roles: admin.'
+      summary: Create a product, optionally with variants
+      description: |
+        Roles: admin. Names are unique among ACTIVE products (ignoring case). tax_id must be an active tax.
+        Each variant's price = sales_price + extra_price (e.g. Odoo Brand: 999 + 560 = 1559).
       requestBody:
         required: true
         content:
@@ -646,12 +652,513 @@ paths:
                       data: { $ref: '#/components/schemas/Product' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /products/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      tags: [Products]
+      summary: Get a product
+      description: 'Roles: admin, staff.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Products]
+      summary: Edit, archive or restore a product
+      description: |
+        Roles: admin. Only fields sent are changed. tax_id 0 removes the default tax.
+        status=archived is refused (422 PRODUCT_IN_USE) while an active plan includes the product.
+        Changing sales_price updates every plan that contains the product.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+    delete:
+      tags: [Products]
+      summary: Archive a product (never deletes)
+      description: 'Roles: admin. 422 PRODUCT_IN_USE while an active plan includes it.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+
+  /products/{id}/variants:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      tags: [Products]
+      summary: Add a variant
+      description: 'Roles: admin. attribute + name unique per product (ignoring case); SKU unique; variant price may not be negative.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VariantInput' }
+      responses:
+        '201':
+          description: Created (returns the whole product)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /products/{id}/variants/{vid}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: vid, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      tags: [Products]
+      summary: Edit, deactivate or reactivate a variant
+      description: 'Roles: admin. is_active=false refused (422 VARIANT_IN_USE) while an active plan uses it. A new extra_price updates plans.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VariantUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+    delete:
+      tags: [Products]
+      summary: Deactivate a variant (never deletes)
+      description: 'Roles: admin.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
 
   /plans:
     get:
       tags: [Plans]
       summary: List plans
-      description: 'Any logged-in user. Customers only receive active plans inside their availability window.'
+      description: |
+        Any logged-in user. Customers only get ACTIVE plans available today (filters other than q and
+        billing_period are ignored for them) and no active_subscriptions count.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - { name: sort, in: query, description: 'name | price | created_at | available_from', schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [active, archived, all], default: active } }
+        - { name: billing_period, in: query, schema: { type: string, enum: [daily, weekly, monthly, yearly] } }
+        - { name: available_on, in: query, description: 'only plans available on this date', schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Plan' } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [Plans]
+      summary: Create a plan
+      description: |
+        Roles: admin. The price is NOT sent: it's the sum of the product lines
+        (quantity × (price_override or sales_price + variant extra_price)) and is kept up to date when
+        lines or catalogue prices change. Names are unique ignoring case.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Plan' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /plans/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      tags: [Plans]
+      summary: Get a plan
+      description: 'Any logged-in user; customers get 404 for plans that are archived or not available today.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Plan' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Plans]
+      summary: Edit a plan
+      description: |
+        Roles: admin. Only fields sent are changed; "products" REPLACES all lines. available_until "" removes the
+        end date; auto_close_after_cycles 0 removes it. Changing billing_period/billing_interval is refused
+        (422 PLAN_IN_USE) while confirmed/active/paused subscriptions use the plan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Plan' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+
+  /plans/{id}/status:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    patch:
+      tags: [Plans]
+      summary: Archive or reactivate a plan
+      description: |
+        Roles: admin. Archived plans are hidden from customers and new quotations; existing subscriptions keep billing.
+        Reactivating is refused (422 PLAN_HAS_INACTIVE_PRODUCTS) if a line uses an archived product or inactive variant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, archived] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Plan' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+
+  /quotation-templates:
+    get:
+      tags: [Quotation templates]
+      summary: List quotation templates
+      description: 'Roles: admin, staff.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - { name: q, in: query, schema: { type: string } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: plan_id, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Template' } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Quotation templates]
+      summary: Create a template
+      description: 'Roles: admin. Give lines, or a plan_id (its products become the lines). Names unique ignoring case.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Template' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /quotation-templates/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      tags: [Quotation templates]
+      summary: Get a template
+      description: 'Roles: admin, staff.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Template' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Quotation templates]
+      summary: Edit a template
+      description: 'Roles: admin. plan_id 0 removes the plan; lines replaces all lines; is_active toggles.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Template' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Quotation templates]
+      summary: Deactivate a template
+      description: 'Roles: admin.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Template' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /discounts:
+    get:
+      tags: [Discounts]
+      summary: List discount rules
+      description: 'Roles: admin.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - { name: q, in: query, description: name or code, schema: { type: string } }
+        - { name: scope, in: query, schema: { type: string, enum: [subscription, product] } }
+        - { name: state, in: query, schema: { type: string, enum: [active, scheduled, expired, used_up, inactive] } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Discount' } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Discounts]
+      summary: Create a discount rule
+      description: |
+        Roles: admin ("Only the admin can create discount rules"). Eligible discounts are applied automatically by
+        the pricing engine: the best product discount per line, then the best subscription-wide discount; they
+        stop applying after ends_on or once usage_count reaches max_usage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiscountInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Discount' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /discounts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      tags: [Discounts]
+      summary: Get a discount
+      description: 'Roles: admin.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Discount' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Discounts]
+      summary: Edit a discount
+      description: 'Roles: admin. "" clears code / min_purchase_amount / ends_on; 0 clears min_quantity / max_usage. max_usage can''t go below usage_count.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiscountInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Discount' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Discounts]
+      summary: Deactivate a discount (usage history is kept)
+      description: 'Roles: admin.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Discount' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /discounts/{id}/usages:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      tags: [Discounts]
+      summary: Where a discount was applied
+      description: 'Roles: admin. Rows are created by invoice generation (A9).'
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
@@ -665,8 +1172,36 @@ paths:
                   - $ref: '#/components/schemas/Envelope'
                   - type: object
                     properties:
-                      data: { type: array, items: { $ref: '#/components/schemas/Plan' } }
+                      data: { type: array, items: { $ref: '#/components/schemas/DiscountUsage' } }
                       meta: { $ref: '#/components/schemas/PageMeta' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /pricing/preview:
+    post:
+      tags: [Discounts]
+      summary: Price catalogue lines with today's taxes and discounts
+      description: |
+        Roles: admin, staff. Pure calculation, nothing is saved. Order: line subtotal → best product discount →
+        best subscription discount (spread over lines) → tax per line (rounded half-up). Example: 10 × Odoo Brand
+        (1559) with "10% off orders over 10,000" and GST 18% → total 16556.58.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PricePreviewInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PricePreview' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /invoices:
     get:
@@ -962,6 +1497,24 @@ components:
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
+    VariantInput:
+      type: object
+      required: [attribute, name]
+      properties:
+        attribute: { type: string, example: Brand }
+        name: { type: string, example: Odoo Brand }
+        extra_price: { type: string, example: '560.00', description: 'added to sales_price; may be negative; default 0' }
+        sku: { type: string, example: ODOO-SEAT }
+
+    VariantUpdate:
+      type: object
+      properties:
+        attribute: { type: string }
+        name: { type: string }
+        extra_price: { type: string }
+        sku: { type: string, description: '"" removes it' }
+        is_active: { type: boolean }
+
     Variant:
       type: object
       properties:
@@ -970,6 +1523,8 @@ components:
         name: { type: string, example: Odoo Brand }
         extra_price: { $ref: '#/components/schemas/Money' }
         price: { $ref: '#/components/schemas/Money' }
+        sku: { type: string, nullable: true }
+        is_active: { type: boolean }
 
     ProductInput:
       type: object
@@ -979,17 +1534,20 @@ components:
         product_type: { type: string, enum: [software, service, addon] }
         sales_price: { $ref: '#/components/schemas/Money' }
         cost_price: { $ref: '#/components/schemas/Money' }
-        tax_id: { type: integer, format: int64, nullable: true }
+        description: { type: string, description: notes }
+        tax_id: { type: integer, format: int64, description: must be an active tax }
+        variants: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/VariantInput' } }
+
+    ProductUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        product_type: { type: string, enum: [software, service, addon] }
+        sales_price: { $ref: '#/components/schemas/Money' }
+        cost_price: { $ref: '#/components/schemas/Money' }
         description: { type: string }
-        variants:
-          type: array
-          items:
-            type: object
-            required: [attribute, name, extra_price]
-            properties:
-              attribute: { type: string }
-              name: { type: string }
-              extra_price: { $ref: '#/components/schemas/Money' }
+        tax_id: { type: integer, format: int64, description: '0 removes the default tax' }
+        status: { type: string, enum: [active, archived] }
 
     Product:
       type: object
@@ -998,28 +1556,251 @@ components:
         name: { type: string, example: Software Subscription }
         product_type: { type: string, enum: [software, service, addon] }
         sales_price: { $ref: '#/components/schemas/Money' }
-        cost_price: { $ref: '#/components/schemas/Money' }
-        tax_id: { type: integer, format: int64, nullable: true }
+        cost_price: { type: string, nullable: true, description: 'admin only (null for staff)' }
+        margin: { type: string, nullable: true, description: 'sales_price - cost_price, admin only' }
         description: { type: string, nullable: true }
+        tax:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer, format: int64 }
+            name: { type: string }
+            rate: { type: string, example: '18.00' }
         status: { type: string, enum: [active, archived] }
         variants: { type: array, items: { $ref: '#/components/schemas/Variant' } }
         created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    PlanLineInput:
+      type: object
+      required: [product_id]
+      properties:
+        product_id: { type: integer, format: int64 }
+        variant_id: { type: integer, format: int64, description: must belong to the product and be active }
+        quantity: { type: integer, minimum: 1, default: 1 }
+        price_override: { type: string, description: 'replaces the catalogue unit price for this line' }
+
+    PlanInput:
+      type: object
+      required: [name, billing_period, products]
+      properties:
+        name: { type: string, example: Starter Monthly }
+        description: { type: string }
+        billing_period: { type: string, enum: [daily, weekly, monthly, yearly] }
+        billing_interval: { type: integer, minimum: 1, maximum: 99, default: 1, description: 'every N periods' }
+        min_quantity: { type: integer, minimum: 1, default: 1 }
+        available_from: { type: string, format: date, description: 'default today' }
+        available_until: { type: string, format: date }
+        auto_close_enabled: { type: boolean, default: false }
+        auto_close_after_cycles: { type: integer, minimum: 1, description: 'required when auto_close_enabled' }
+        is_pausable: { type: boolean, default: false }
+        is_closable: { type: boolean, default: true, description: early closure allowed }
+        is_renewable: { type: boolean, default: true }
+        products: { type: array, minItems: 1, maxItems: 50, items: { $ref: '#/components/schemas/PlanLineInput' } }
+
+    PlanUpdate:
+      type: object
+      description: 'Any subset of PlanInput fields. products replaces all lines.'
+      properties:
+        name: { type: string }
+        description: { type: string }
+        billing_period: { type: string, enum: [daily, weekly, monthly, yearly] }
+        billing_interval: { type: integer }
+        min_quantity: { type: integer }
+        available_from: { type: string, format: date }
+        available_until: { type: string, description: 'date, or "" to remove' }
+        auto_close_enabled: { type: boolean }
+        auto_close_after_cycles: { type: integer, description: '0 removes it' }
+        is_pausable: { type: boolean }
+        is_closable: { type: boolean }
+        is_renewable: { type: boolean }
+        products: { type: array, items: { $ref: '#/components/schemas/PlanLineInput' } }
 
     Plan:
       type: object
       properties:
         id: { type: integer, format: int64, example: 3 }
         name: { type: string, example: Starter Monthly }
+        description: { type: string, nullable: true }
         price: { $ref: '#/components/schemas/Money' }
         billing_period: { type: string, enum: [daily, weekly, monthly, yearly] }
         billing_interval: { type: integer, example: 1 }
+        billing_label: { type: string, example: Every 3 months }
         min_quantity: { type: integer, example: 1 }
         available_from: { type: string, format: date }
         available_until: { type: string, format: date, nullable: true }
+        is_available_now: { type: boolean }
+        auto_close_enabled: { type: boolean }
+        auto_close_after_cycles: { type: integer, nullable: true }
         is_pausable: { type: boolean }
         is_closable: { type: boolean }
         is_renewable: { type: boolean }
         status: { type: string, enum: [active, archived] }
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer, format: int64 }
+              product_id: { type: integer, format: int64 }
+              product_name: { type: string }
+              variant_id: { type: integer, format: int64, nullable: true }
+              variant_name: { type: string, nullable: true }
+              quantity: { type: integer }
+              price_override: { type: string, nullable: true }
+              unit_price: { $ref: '#/components/schemas/Money' }
+              line_total: { $ref: '#/components/schemas/Money' }
+        active_subscriptions: { type: integer, description: 'admin/staff only (absent for customers)' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    TemplateInput:
+      type: object
+      properties:
+        name: { type: string, example: Standard SME offer }
+        plan_id: { type: integer, format: int64 }
+        validity_days: { type: integer, minimum: 1, maximum: 365, default: 15 }
+        payment_terms_days: { type: integer, minimum: 0, maximum: 365, default: 15 }
+        terms: { type: string }
+        is_active: { type: boolean, description: PUT only }
+        lines:
+          type: array
+          items:
+            type: object
+            required: [product_id]
+            properties:
+              product_id: { type: integer, format: int64 }
+              variant_id: { type: integer, format: int64 }
+              quantity: { type: integer, minimum: 1, default: 1 }
+
+    Template:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        plan:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer, format: int64 }
+            name: { type: string }
+            billing_label: { type: string }
+            price: { $ref: '#/components/schemas/Money' }
+            status: { type: string }
+        validity_days: { type: integer }
+        payment_terms_days: { type: integer }
+        terms: { type: string, nullable: true }
+        is_active: { type: boolean }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer, format: int64 }
+              product_id: { type: integer, format: int64 }
+              product_name: { type: string }
+              variant_id: { type: integer, format: int64, nullable: true }
+              variant_name: { type: string, nullable: true }
+              quantity: { type: integer }
+              unit_price: { $ref: '#/components/schemas/Money' }
+              line_total: { $ref: '#/components/schemas/Money' }
+        estimated_total: { $ref: '#/components/schemas/Money' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    DiscountInput:
+      type: object
+      description: 'POST requires name, discount_type, value, scope (+ product_ids for product scope).'
+      properties:
+        name: { type: string, example: '10% off orders over 10,000' }
+        code: { type: string, description: 'optional label, stored upper-case' }
+        discount_type: { type: string, enum: [fixed, percentage] }
+        value: { type: string, example: '10', description: 'amount, or percent ≤ 100' }
+        scope: { type: string, enum: [subscription, product] }
+        product_ids: { type: array, items: { type: integer, format: int64 } }
+        min_purchase_amount: { type: string, example: '10000.00' }
+        min_quantity: { type: integer, minimum: 1 }
+        starts_on: { type: string, format: date, description: default today }
+        ends_on: { type: string, format: date }
+        max_usage: { type: integer, minimum: 1 }
+        is_active: { type: boolean, description: PUT only }
+
+    Discount:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        code: { type: string, nullable: true }
+        discount_type: { type: string, enum: [fixed, percentage] }
+        value: { $ref: '#/components/schemas/Money' }
+        label: { type: string, example: 10% off }
+        scope: { type: string, enum: [subscription, product] }
+        products: { type: array, items: { type: object, properties: { id: { type: integer, format: int64 }, name: { type: string } } } }
+        min_purchase_amount: { type: string, nullable: true }
+        min_quantity: { type: integer, nullable: true }
+        starts_on: { type: string, format: date }
+        ends_on: { type: string, format: date, nullable: true }
+        max_usage: { type: integer, nullable: true }
+        usage_count: { type: integer }
+        remaining_uses: { type: integer, nullable: true }
+        is_active: { type: boolean }
+        state: { type: string, enum: [active, scheduled, expired, used_up, inactive] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    DiscountUsage:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        invoice_id: { type: integer, format: int64 }
+        invoice_number: { type: string, nullable: true }
+        customer_id: { type: integer, format: int64 }
+        customer_name: { type: string, nullable: true }
+        amount: { $ref: '#/components/schemas/Money' }
+        created_at: { type: string, format: date-time }
+
+    PricePreviewInput:
+      type: object
+      required: [lines]
+      properties:
+        date: { type: string, format: date, description: "which day's discounts apply (default today)" }
+        lines:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [product_id]
+            properties:
+              product_id: { type: integer, format: int64 }
+              variant_id: { type: integer, format: int64 }
+              quantity: { type: integer, minimum: 1, default: 1 }
+              unit_price: { type: string, description: override the catalogue price }
+
+    PricePreview:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        subtotal: { $ref: '#/components/schemas/Money' }
+        discount_total: { $ref: '#/components/schemas/Money' }
+        tax_total: { $ref: '#/components/schemas/Money' }
+        total: { $ref: '#/components/schemas/Money' }
+        discounts: { type: array, items: { type: object, properties: { discount_id: { type: integer, format: int64 }, name: { type: string }, scope: { type: string }, amount: { $ref: '#/components/schemas/Money' } } } }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id: { type: integer, format: int64 }
+              description: { type: string }
+              quantity: { type: integer }
+              unit_price: { $ref: '#/components/schemas/Money' }
+              subtotal: { $ref: '#/components/schemas/Money' }
+              product_discount: { $ref: '#/components/schemas/Money' }
+              product_discount_name: { type: string, nullable: true }
+              subscription_discount: { $ref: '#/components/schemas/Money' }
+              tax_rate: { type: string }
+              tax_amount: { $ref: '#/components/schemas/Money' }
+              total: { $ref: '#/components/schemas/Money' }
 
     InvoiceStatus: { type: string, enum: [draft, confirmed, paid, cancelled] }
 

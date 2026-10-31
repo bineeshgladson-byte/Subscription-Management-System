@@ -75,7 +75,16 @@ func run() error {
 	paymentSvc := service.NewPaymentService(db, paymentRepo, invoiceRepo)
 	staffSvc := service.NewStaffService(db, userRepo, hasher, authSvc, cfg.InviteTokenTTL)
 	customerSvc := service.NewCustomerService(db, customerRepo, userRepo, clk)
-	taxSvc := service.NewTaxService(db, repository.NewTaxRepo())
+	taxRepo := repository.NewTaxRepo()
+	productRepo := repository.NewProductRepo()
+	planRepo := repository.NewPlanRepo()
+	taxSvc := service.NewTaxService(db, taxRepo)
+	productSvc := service.NewProductService(db, productRepo, taxRepo, planRepo)
+	planSvc := service.NewPlanService(db, planRepo, productRepo, clk)
+	discountRepo := repository.NewDiscountRepo()
+	templateSvc := service.NewTemplateService(db, repository.NewTemplateRepo(), planRepo, productRepo)
+	discountSvc := service.NewDiscountService(db, discountRepo, productRepo, clk)
+	pricingSvc := service.NewPricingService(db, productRepo, discountRepo, clk)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -97,6 +106,10 @@ func run() error {
 		Customers: handler.NewCustomerHandler(customerSvc),
 		Taxes:     handler.NewTaxHandler(taxSvc),
 		Payment:   handler.NewPaymentHandler(paymentSvc),
+		Products:  handler.NewProductHandler(productSvc),
+		Plans:     handler.NewPlanHandler(planSvc),
+		Templates: handler.NewTemplateHandler(templateSvc),
+		Discounts: handler.NewDiscountHandler(discountSvc, pricingSvc),
 	})
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
 

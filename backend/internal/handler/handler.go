@@ -89,10 +89,13 @@ func Health(db *gorm.DB) gin.HandlerFunc {
 }
 
 // pathID reads a positive integer ":id" path parameter, or writes a 400.
-func pathID(c *gin.Context) (int64, bool) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+func pathID(c *gin.Context) (int64, bool) { return pathParamID(c, "id") }
+
+// pathParamID reads any positive integer path parameter (e.g. ":vid"), or writes a 400.
+func pathParamID(c *gin.Context, name string) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param(name), 10, 64)
 	if err != nil || id <= 0 {
-		response.Error(c, apperr.Validation("Invalid id", map[string]string{"id": "must be a positive number"}))
+		response.Error(c, apperr.Validation("Invalid id", map[string]string{name: "must be a positive number"}))
 		return 0, false
 	}
 	return id, true

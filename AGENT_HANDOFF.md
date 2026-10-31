@@ -2,7 +2,7 @@
 
 > **For any AI or developer picking this up:** read this whole file before touching code.
 > It is updated after **every** completed step. The newest entry in the step log (section 7) is at the top.
-> Last updated: **2026-10-31**, after the **browser-fit workspace adjustment**.
+> Last updated: **2026-10-31**, after **A5 Templates + A6 Discounts/pricing** (backend) and **frontend wired to the live API**.
 
 ---
 
@@ -10,9 +10,9 @@
 
 | | |
 |---|---|
-| **Current step** | Reference UI ✅ implemented. Backend next: finish **A3 Products and variants**, then A4 Plans (existing untracked backend work is in progress; inspect before editing). |
+| **Current step** | Backend A1–A6 ✅ (customers, taxes, products, plans, quotation templates, discounts + pricing engine). **Frontend now uses the live API for every built module: no sample data.** Next (Ashlin): **A11 Dashboard/reports + A12 admin billing run**, or help A7–A10 (teammates). See section 8. |
 | **Branch** | `ashlin_dev` (Ashlin's backend branch). `main` is the team integration branch. |
-| **Uncommitted work** | Frontend reference UI + this handoff; pre-existing A3/A4 backend files, migrations and seed edit belong to ongoing backend work and were left untouched. A1/A2 are now in HEAD (`dcfc5af`). Ashlin commits by hand; see R1 and `git status`. |
+| **Uncommitted work** | Everything from A3 handlers through A6 plus the frontend wiring (see the step log for files). Also modified but **not by the backend/wiring agent**: `frontend/lib/core/theme/app_theme.dart`, `features/auth/presentation/{auth_card,login_screen}.dart`, `auth/presentation/widgets/{brand_logo,logo_video_loader}.dart` (someone else's auth-UI work; leave as is). Ashlin commits by hand; see R1 and `git status`. |
 | **Is it running?** | `make dev` = backend (hot reload) + Flutter. Health: `curl localhost:8080/health` |
 | **Test before you claim done** | Backend: `make be-test` + `make be-itest`. Frontend: `cd frontend && flutter analyze && flutter test && flutter build web`. |
 
@@ -141,21 +141,26 @@ docs/api/openapi.yaml        THE API contract (validated with openapi-spec-valid
 | `make dev` (Air in Docker) | ✅ merged | — | `backend/.air.toml`, `Dockerfile.dev`, service `api-dev` (profile dev) |
 | **A1 Customers** | ✅ committed | `/customers` list/create/get(+stats)/update, DELETE = archive (admin) | sign-up links to an existing customer by email; archive blocked by open items |
 | **A2 Taxes** | ✅ committed | `/taxes` list/get/create/update, DELETE = deactivate (admin) | rate string 0–100, 2 dp; `TAX_IN_USE` guard |
-| Reference Flutter UI | ✅ built, **uncommitted** | shared workspace, `/plans`, `/dashboard` | User explicitly authorized frontend edits; sample data, not connected to backend yet |
-| A3 Products + variants | ⏭ next | `/products`, `/products/:id/variants` | spec in section 8 |
-| A4 Plans · A5 Templates · A6 Discounts + pricing | ⏳ planned (Ashlin) | | see the plan PDF |
+| Reference Flutter UI | ✅ built | full-viewport workspace shell | Styling kept; the sample-data plans/dashboard bodies were replaced by live-API screens |
+| **A3 Products + variants** | ✅ built (partly committed) | `/products` list/get/create/update, DELETE = archive; `/products/:id/variants` add/update, DELETE = deactivate | variant price = sales + extra; staff see no cost/margin; `PRODUCT_IN_USE` / `VARIANT_IN_USE` guards |
+| **A4 Plans** | ✅ built (partly committed) | `/plans` list/get (all roles), create/update (admin), `PATCH /plans/:id/status` | price computed from lines (SQL `recalcSQL`); customers see only active + available today; `PLAN_IN_USE`, `PLAN_HAS_INACTIVE_PRODUCTS` |
+| **A5 Quotation templates** | ✅ built | `/quotation-templates` list/get/create/update, DELETE = deactivate | lines default to the plan's products; `estimated_total` |
+| **A6 Discounts + pricing engine** | ✅ built | `/discounts` CRUD (admin), `/discounts/:id/usages`, `POST /pricing/preview` (admin + staff) | pure `service.Price()`; `DiscountRepo.ReserveUse/ReleaseUse` ready for invoices (A9) |
+| **Frontend wired to the API** | ✅ built | Dashboard, Customers, Staff, Products (+variants), Taxes, Plans, Templates, Discounts, Price calculator, Profile | quotations/subscriptions/invoices/payments/reports/settings stay placeholders until their APIs exist |
 | A7 Quotations · A8 Subscriptions | 🟡 Bineesh | | his branch has a subscription repo/service/handler |
 | A9 Billing/invoices · A10 Payments | 🟡 Gayatri | | her branch has record-payment |
 | A11 Dashboard · A12 Admin billing run | ⏳ planned (Ashlin) | | |
 | Phase B Staff flow audit · Phase C Customer `/me/*` | ⏳ after Phase A | | |
 
-**Tests right now:** 11 integration tests pass (`TestRegisterAndLogin, TestRBAC, TestForgotAndResetPassword,
-TestChangePassword, TestUpdateProfile, TestStaffManagement, TestCustomerCRUDAndValidation, TestCustomerPermissions,
-TestSignupLinksToExistingCustomer, TestCustomerArchive, TestTaxes`), plus unit tests (password, email, GSTIN, phone,
-billing dates, tax rate parsing). Postman: 92 requests / 12 folders in `~/Documents/brightloop-postman/`.
+**Tests right now:** backend 15 integration tests pass (`make be-itest`; new: `TestQuotationTemplates`,
+`TestDiscountsAndPricing`), unit tests incl. pricing engine (Acme ₹16,556.58, Rahul ₹1,178.82, best-of, minimums, spread, cap).
+Frontend: 17 widget/unit tests pass (`flutter test`; `test/workspace_test.dart` uses a `FakeApi` ApiClient with API-shaped JSON),
+plus opt-in `LIVE_API=http://localhost:8080/api/v1 flutter test test/live_api_test.dart` (real repos vs the live backend, passes).
+Postman: 140 requests / 16 folders; folders 0,1,2,5,11–15 = 90 requests / 165 assertions all pass.
 
 **Migrations applied:** `20261101000000_init_schema` (20 tables), `20261101000100_customers_unique_email`,
-`20261101000200_taxes_unique_name_ci`.
+`20261101000200_taxes_unique_name_ci`, `20261101000300_products_unique_active_name`, `20261101000400_plans_unique_name_ci`,
+`20261101000500_templates_unique_name_ci`, `20261101000600_discounts_code_ci`.
 
 ---
 
@@ -171,6 +176,21 @@ billing dates, tax rate parsing). Postman: 92 requests / 12 folders in `~/Docume
 7. **Customers:** one live customer per email (partial unique index); a sign-up attaches to the existing customer
    record; a linked customer's email can't be changed by staff; archiving deactivates their login.
 8. **Taxes are never hard-deleted;** invoice lines snapshot `tax_rate`. Can't deactivate while active products use the tax as their default.
+10. **Product names are unique among ACTIVE products** (ignoring case). Archived products may keep old names. Decided by the agent; reversible by dropping `ux_products_name_active`.
+11. **Plan price is never typed in:** it's Σ quantity × (price_override or sales_price + variant extra_price), stored in
+    `subscription_plans.price` and refreshed in SQL (`repository.recalcSQL`) when lines, product prices or variant prices change.
+12. **Staff see products without `cost_price`/`margin`**, and plans with `active_subscriptions`. Customers see plans only (no counts).
+13. **Catalogue rows are never hard-deleted:** products archive, variants deactivate, plans archive. Existing subscriptions keep billing.
+14. **Pricing engine order:** line subtotal → single best product discount per line → single best order-wide discount
+    (spread proportionally, cents to largest lines) → tax per line rounded half-up → total. Minimums: product discounts use the
+    line's qty/subtotal, order discounts use the whole order's qty/subtotal (before discounts). Eligibility (active, dates, uses
+    left) is a DB query (`DiscountRepo.Eligible`). A7–A9 must price through `service.Price()` so quotation = subscription = invoice.
+15. **Discount usage** is counted when an invoice is created: `DiscountRepo.ReserveUse(tx, id)` (atomic, refuses when used up) +
+    a `discount_usages` row; cancelling an invoice calls `ReleaseUse`. Not called anywhere yet (needs A9).
+16. **Frontend data pattern:** `features/<x>/data/<x>_api.dart` = model `fromJson` + repository (ApiClient) + Riverpod
+    `FutureProvider.autoDispose(.family)` keyed by a query record; mutate via repository then `ref.invalidate(provider)`.
+    Shared UI in `core/widgets/ui_kit.dart` (`PageFrame`, `SearchBox`, `FilterDropdown`, `Pager`, `ResourceTile`, `Pill`,
+    `showApiForm` which maps API `details` to fields, `runAction`, `confirmAction`, `DateField`). `ProviderScope(retry: null)`.
 9. **Billing correctness comes from the DB:** transaction + `FOR UPDATE SKIP LOCKED` + unique `(subscription_id, period_start)`;
    month-end clamping via `billing_anchor_day` (`service/billing_dates.go`, tested).
 
@@ -178,10 +198,58 @@ billing dates, tax rate parsing). Postman: 92 requests / 12 folders in `~/Docume
 
 ## 7. Step log (newest first)
 
+### 2026-10-31 · A5 + A6 backend, frontend wired to the live API ✅ (uncommitted)
+- **Backend A5:** migration `20261101000500_templates_unique_name_ci`; seed copies the plan's products into the
+  "Standard SME offer" template (idempotent). Models: `QuotationTemplate.Plan`, `QuotationTemplateLine.Product/Variant`.
+  New `dto/template.go`, `repository/template_repo.go`, `service/template_service.go`, `handler/template_handler.go`; routes in `routes_plans.go`.
+- **Shared line validation** `service/catalog_lines.go` (`resolveLines`, `resolvedLine.UnitPrice/TaxRate`) is used by plans, templates and pricing.
+- **Backend A6:** migration `20261101000600_discounts_code_ci` (codes upper-case, `ux_discounts_code_ci`). New `service/pricing.go`
+  (+ `pricing_test.go`), `dto/discount.go`, `repository/discount_repo.go` (List with states, `Eligible`, `ReserveUse`, `ReleaseUse`,
+  `Usages`), `service/discount_service.go` (rules + `PricingService.Preview`), `handler/discount_handler.go`, `routes_discounts.go`
+  (adds `POST /pricing/preview`). Discount states: active | scheduled | expired | used_up | inactive.
+- `TestDiscountsAndPricing` switches its discounts off in `t.Cleanup` (discounts affect every price in the shared dev DB).
+- **Live check:** seed "10% off orders over 10,000" starts 2026-11-01. A preview of 10 × Odoo Brand dated 2026-11-01 = 15590 − 1559 + 2525.58 = **16556.58**.
+- **OpenAPI:** templates, discounts, usages, pricing preview (30 paths, valid). YAML gotcha: quote flow values that contain commas.
+- **Frontend (user asked: connect everything, no fake data):**
+  - New: `core/widgets/ui_kit.dart`, `core/network/json.dart`, data layers in `features/{customers,staff,taxes,products,plans,templates,discounts,profile}/data/`.
+  - New: `products/presentation/line_editor.dart`, screens `taxes/`, `templates/`, `pricing/`.
+  - Rewritten on the API: `dashboard_screen.dart`, `customers_screen.dart`, `staff_screen.dart`, `products_screen.dart`, `plans_screen.dart`,
+    `discounts_screen.dart`, `profile_screen.dart`.
+  - Nav and routes: `/taxes`, `/templates`, `/pricing`. `AuthController.refreshUser/replaceToken` added; `PreviewNotice` removed.
+  - `main.dart`: `ProviderScope(retry: (_, _) => null)`, so Riverpod 3 doesn't auto-retry failed (e.g. 403) requests.
+  - Bug caught by tests: the Status filter crashed because "Active" was a null option while the value was 'active' → fixed.
+  - UI captures: `~/Documents/subly-ui-preview/` (`SUBLY_UI_CAPTURE=… flutter test test/workspace_test.dart`).
+  - The running dev app was hot-restarted with `kill -USR2 <flutter_tools pid>` (works for any `flutter run`).
+
+
+### 2026-10-31 · A3 Products + A4 Plans ✅ (partly committed in `80a4dad`)
+- **Migrations:** `20261101000300_products_unique_active_name` (`ux_products_name_active ON lower(name) WHERE deleted_at IS NULL AND status='active'`,
+  `ix_products_type`, `ux_variants_product_attr_name_ci`) and `20261101000400_plans_unique_name_ci` (drops `subscription_plans_name_key`,
+  adds `ux_plans_name_ci`, `ix_plans_status_availability`). Both tested up → down → up. Seed plans insert now `ON CONFLICT ((lower(name)))`.
+- **New:** `service/money.go` (`parseMoney`, `parseDate`/`ParseDate`, `dateString`; dates stored as UTC midnight) + `money_test.go`,
+  `dto/product.go`, `dto/plan.go`, `repository/product_repo.go`, `repository/plan_repo.go` (`recalcSQL`, `RecalculatePrice`,
+  `RecalculateForProduct`, `ActiveSubscriptions`), `service/product_service.go`, `service/plan_service.go`,
+  `handler/product_handler.go`, `handler/plan_handler.go`, `tests/integration/products_test.go`, `plans_test.go`.
+- **Changed:** `routes_catalog.go` and `routes_plans.go` (real handlers; quotation-template routes are still `todo`), `router.go` Deps
+  (`Products`, `Plans`), `main.go` wiring, `handler.go` (`pathParamID` for `:vid`), test `setup()`.
+- **Rules:**
+  - Products: prices ≥ 0, at most 2 dp; the tax must be active; variants may be created inline on POST; variant `extra_price` may be negative but the price may not go below 0.
+  - Archive is blocked while an active plan includes the product (`PRODUCT_IN_USE`).
+  - Variants: deactivation is blocked while an active plan uses the variant (`VARIANT_IN_USE`).
+  - Plans: at least 1 product line; the variant must belong to the product and be active; no duplicate lines; `available_until ≥ available_from`;
+    `auto_close_enabled` requires `auto_close_after_cycles`.
+  - Plans: the billing period/interval is locked while confirmed/active/paused subscriptions exist (`PLAN_IN_USE`); reactivating is blocked if a line is inactive.
+- **Live check:** seed "Software Subscription" variants show Brand A 999.00 and Odoo Brand 1559.00; "Starter Monthly" price is 999.00, labelled Monthly.
+- **Postman generator fix:** id variables in JSON bodies are now unquoted (`{{productId}}`, not `"{{productId}}"`), otherwise the API rejects them as strings.
+- **OpenAPI:** `/products*`, `/plans*` fully specified (24 paths, validated).
+
+
 ### 2026-10-31 · Browser-fit workspace ✅ (uncommitted)
 - User requested removal of the large outer margins visible in the browser.
 - `frontend/lib/core/widgets/app_shell.dart`: removed desktop horizontal/vertical frame padding; the sidebar and content now fill the viewport. Content keeps rounded left corners beside the sidebar, with square right corners at the browser edge. Removing the frame also gives the navigation more vertical room.
 - Validation: Flutter analysis clean, all 8 workspace widget tests pass (desktop, mobile, tablet, landscape and large text). Hot reload requested for the running dev app.
+- Changed files for this adjustment: `frontend/lib/core/widgets/app_shell.dart`, `AGENT_HANDOFF.md`.
+- Existing UI captures show the earlier framed layout; regenerate them before using them to review the full-viewport layout.
 - Next backend steps remain A3/A4; no backend changes in this adjustment.
 
 ### 2026-10-31 · Reference UI implementation ✅ (uncommitted)
@@ -233,28 +301,21 @@ billing dates, tax rate parsing). Postman: 92 requests / 12 folders in `~/Docume
 
 ---
 
-## 8. Next step: A3 Products and variants (detailed spec)
+## 8. Next step (Ashlin): A11 Dashboard/reports + A12 admin billing run
 
-Brief: *"The admin adds it with its name, type, sales price, cost price and notes, and offers it in variants, for
-example by brand, where choosing the Odoo brand adds 560 to the price."*
+Brief: *"The finance lead wants one place to see active subscriptions, revenue, payments and overdue invoices, with
+filters and a summary view … every page should still respond in under two seconds."*
 
-- **Tables (exist):** `products` (name, product_type ENUM software|service|addon, sales_price, cost_price,
-  description, tax_id FK→taxes, status active|archived, soft delete) and `product_variants`
-  (product_id FK CASCADE, attribute, name, extra_price, sku UNIQUE, is_active; UNIQUE (product_id, attribute, name)).
-- **Routes:** in `routes_catalog.go` (currently `todo` stubs). Reads `adminOrStaff`, writes `adminOnly`:
-  `GET/POST /products`, `GET/PUT/DELETE /products/:id` (DELETE = archive),
-  `POST /products/:id/variants`, `PUT/DELETE /products/:id/variants/:vid`.
-- **Rules:**
-  - prices ≥ 0, money strings, at most 2 dp (reuse the `parseRate`-style parsing for money)
-  - `tax_id`, if given, must be an **active** tax
-  - POST may include `variants: [...]` (created in the same transaction)
-  - each variant response has a computed `price = sales_price + extra_price`
-  - variant attribute + name unique per product; SKU unique
-  - archived products are hidden from lists by default (`?status=archived` to see them) and must not be usable in new quotations
-  - list filters: `q`, `status`, `product_type`, `tax_id`; sort by name, sales_price, created_at
-- **Consider:** a migration making the product name unique among active products (case-insensitive)? Ask the user first.
-- **Done when:** the Odoo Brand variant shows ₹1,559 (999 + 560); staff get 403 on writes; customers 403 on everything;
-  tax `products_using` counts update; integration tests, OpenAPI, Postman folder "12. Products (A3)" and this file updated.
+- **Depends on** A7–A10 data (subscriptions, invoices, payments) from Bineesh/Gayatri. Merge their branches first, then:
+  - `GET /dashboard/summary?from&to` (admin all; staff without money totals): customers, active/total subscriptions, MRR
+    (daily×30, weekly×52/12, monthly, yearly/12, each ÷ interval), ARR = MRR×12, revenue received (completed payments),
+    outstanding (confirmed invoices' amount_due), overdue (count + amount), recent payments.
+  - `GET /reports/revenue?from&to&group_by=month`, `GET /reports/subscriptions`, `GET /reports/overdue`.
+  - Performance: load-test seed (5k customers / 10k subscriptions), then `EXPLAIN ANALYZE`, target < 300 ms per query.
+  - Frontend: replace the dashboard's "Revenue … appear here once billing is live" note with the new endpoint; build `reports_screen.dart`.
+- **A12:** `POST /admin/billing/run {as_of}` (dev-only as_of) → calls the A9 billing service; build `settings_screen.dart` with a "Run billing" button.
+- **For teammates (A7–A9):** price lines with `resolveLines` + `service.Price()` + `DiscountRepo.Eligible`; reserve discount uses in the
+  invoice transaction; quotation lines can start from `GET /quotation-templates/:id` (lines, validity_days, payment_terms_days).
 
 ---
 
@@ -267,8 +328,13 @@ example by brand, where choosing the Odoo brand adds 560 to the price."*
 - **`backend/tmp/`** is a root-owned empty dir created by Docker for api-dev; it's git-ignored and harmless.
 - **The email format check is lenient** (`a@b` and `rahul@gmail` are accepted). A stricter check is optional, not done.
 - **Not done (optional):** rate limiting on login/forgot, email verification, Google login, Flutter `/reset-password` and `/set-password` pages (Flutter team).
+- **Postman bodies:** numeric ids must be unquoted in raw JSON (`"product_id": {{productId}}`). The generator does this for every variable ending in `Id`.
+- **Frontend plans screen** (other session) still uses sample USD data; the real API returns INR money strings from `GET /plans`.
+- **Dev DB was wiped on 2026-10-31** at the user's request (all tables truncated, ids and document sequences reset; only the admin
+  remains, recreated by the API on start). `make seed` brings back the demo catalogue; integration tests/Newman add test rows again.
+- **Riverpod 3 auto-retries failing providers** unless `ProviderScope(retry:)` is set (it is, in `main.dart` and the tests).
 - **Integration tests and Newman runs add test rows to the dev DB** (timestamped emails). `make reset && make seed` cleans up.
 
 ## 10. Open decisions (team)
 1. Confirm module ownership (A0). 2. Staff see no financial totals? 3. Scheduled invoices auto-confirmed (`INVOICE_AUTO_CONFIRM=true`)?
-4. Quotations stored in `subscriptions` (ADR-001)? 5. Unique product names?
+4. Quotations stored in `subscriptions` (ADR-001)? 5. ~~Unique product names?~~ Decided: unique among active products (decision 10); reversible.

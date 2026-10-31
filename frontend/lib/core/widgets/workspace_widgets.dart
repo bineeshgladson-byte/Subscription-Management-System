@@ -76,20 +76,3 @@ class MetricTile extends StatelessWidget {
     ),
   );
 }
-
-class PreviewNotice extends StatelessWidget {
-  const PreviewNotice({super.key});
-  @override
-  Widget build(BuildContext context) => const Row(
-    children: [
-      Icon(Icons.info_outline, size: 13, color: WorkspaceTheme.muted),
-      SizedBox(width: 6),
-      Expanded(
-        child: Text(
-          'Design preview · Sample data. Changes stay in this session.',
-          style: TextStyle(fontSize: 10, color: WorkspaceTheme.muted),
-        ),
-      ),
-    ],
-  );
-}
