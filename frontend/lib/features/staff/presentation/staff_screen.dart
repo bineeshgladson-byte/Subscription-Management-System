@@ -183,9 +183,11 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
         return true;
       },
     );
-    for (final t in [name, email, password]) {
-      t.dispose();
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final t in [name, email, password]) {
+        t.dispose();
+      }
+    });
     if (saved == true && mounted) {
       ref.invalidate(staffProvider);
       showMessage(
