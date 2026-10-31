@@ -25,7 +25,7 @@ commands run inside Docker through the Makefile.
 git clone <repo-url> brightloop && cd brightloop
 cp .env.example .env                 # then set JWT_SECRET (openssl rand -hex 32)
 make up                              # postgres + migrations + api + mailpit + swagger
-make seed                            # demo catalogue (taxes, products, plans, discount)
+make seed                            # run seed scripts (currently no-op)
 make fe-get && make fe-run           # Flutter web on http://localhost:5000
 ```
 
@@ -47,7 +47,7 @@ Run `make help` to see every command.
 
 ## What works today (Phase 1 + 2 scaffold)
 
-- ✅ Docker dev stack, full database schema (all tables, constraints, indexes), demo seed
+- ✅ Docker dev stack, full database schema (all tables, constraints, indexes)
 - ✅ Backend layering with a complete reference module: **register, login, `/auth/me`**
 - ✅ JWT auth middleware + role checks (`adminOnly`, `adminOrStaff`, `customerOnly`)
 - ✅ **Every endpoint from the plan is registered with its correct roles** and returns `501 NOT_IMPLEMENTED` until built
@@ -97,3 +97,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for branches, PRs and ownership.
 - **Android emulator can't reach the API:** use `--dart-define=API_BASE_URL=http://10.0.2.2:8080/api/v1`.
 - **Flutter web CORS error:** run the app on port 5000 (`make fe-run`) or add your origin to `CORS_ALLOWED_ORIGINS`.
 - **Start over with an empty database:** `make reset` (deletes all data).
+
+### Product plans and customer email updates
+
+In **Plans**, choose a product to view its billing options. Admins can create several plans for the same product (including a different cadence or a price override); the selected product is prefilled. Staff can view the same groups. Customers see only active plans available today. Product details also offer **View plans**.
+
+Customer emails are automatically queued for quotation creation/sending/cancellation/expiry, subscription confirmation/activation/pause/resume/closure, renewal requests, issued/cancelled/paid invoices and payment receipts. Issued invoice emails include the item, discount, tax and outstanding-balance breakdown. No admin/staff copies are sent.
+
+Renewal reminders run with billing at **7, 3 and 1 day before** a renewable subscription ends, or before the next billing date if it has no contract end date. Pending renewal quotations suppress more reminders. Requests made early keep the existing subscription active until its confirmed replacement starts. Reminders do not automatically renew or charge the customer.
+
+Migration `20261101000700` adds the durable email queue. Delivery starts after each successful action, retries every minute after SMTP failures and survives API restarts. Repeated scheduler runs share a unique reminder key. As with SMTP generally, a crash after server acceptance but before recording delivery can still cause a retry. The existing `SMTP_*`, `BILLING_CRON` and `INVOICE_AUTO_CONFIRM` settings apply; no new mail service is required.
+
+For isolated backend integration verification without touching live customer records or sending real mail, create a separate migrated test database and point `TEST_DATABASE_URL` at it. The test harness uses a fake mailer.

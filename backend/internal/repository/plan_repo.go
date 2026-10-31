@@ -82,6 +82,7 @@ func (r *PlanRepo) RecalculateForProduct(tx *gorm.DB, productID int64) error {
 }
 
 type PlanFilter struct {
+	ProductID     int64
 	Search        string
 	Status        string // "active" (default), "archived", "all"
 	BillingPeriod string
@@ -90,6 +91,9 @@ type PlanFilter struct {
 
 func (r *PlanRepo) List(db *gorm.DB, f PlanFilter, p pagination.Params) ([]models.SubscriptionPlan, int64, error) {
 	scope := func(q *gorm.DB) *gorm.DB {
+		if f.ProductID > 0 {
+			q = q.Where("id IN (SELECT plan_id FROM plan_products WHERE product_id = ?)", f.ProductID)
+		}
 		if s := strings.TrimSpace(f.Search); s != "" {
 			like := "%" + escapeLike(strings.ToLower(s)) + "%"
 			q = q.Where("(lower(name) LIKE ? OR lower(coalesce(description,'')) LIKE ?)", like, like)

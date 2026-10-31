@@ -7,6 +7,7 @@ import "github.com/gin-gonic/gin"
 // subscriptions and invoices" and "manage their own subscriptions".
 func registerMeRoutes(rg *gin.RouterGroup, d Deps) {
 	g := rg.Group("/me", customerOnly)
+	g.POST("/quotations", d.Sales.MyRequestQuotation)
 	g.GET("/subscriptions", d.Sales.MySubscriptions)
 	g.GET("/subscriptions/:id", d.Sales.MySubscription)
 	g.POST("/subscriptions/:id/pause", d.Sales.MyAction("pause"))

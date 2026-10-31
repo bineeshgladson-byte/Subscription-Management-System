@@ -13,7 +13,6 @@ import '../../features/invoices/presentation/invoices_screen.dart';
 import '../../features/payments/presentation/payments_screen.dart';
 import '../../features/plans/presentation/plans_screen.dart';
 import '../../features/portal/presentation/portal_screens.dart';
-import '../../features/pricing/presentation/pricing_screen.dart';
 import '../../features/products/presentation/products_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/quotations/presentation/quotations_screen.dart';
@@ -60,58 +59,143 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const ForgotPasswordScreen(),
       ),
       ShellRoute(
-        builder: (context, state, child) => AppShell(child: child),
+        pageBuilder: (context, state, child) => NoTransitionPage(
+          key: state.pageKey,
+          child: AppShell(child: child),
+        ),
         routes: [
           // Feature owners: add detail routes as children, e.g.
           // GoRoute(path: '/invoices', ..., routes: [GoRoute(path: ':id', ...)])
           GoRoute(
             path: '/dashboard',
-            builder: (_, _) => const DashboardScreen(),
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const DashboardScreen(),
+            ),
           ),
           GoRoute(
             path: '/customers',
-            builder: (_, _) => const CustomersScreen(),
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const CustomersScreen(),
+            ),
           ),
-          GoRoute(path: '/staff', builder: (_, _) => const StaffScreen()),
-          GoRoute(path: '/products', builder: (_, _) => const ProductsScreen()),
-          GoRoute(path: '/taxes', builder: (_, _) => const TaxesScreen()),
-          GoRoute(path: '/plans', builder: (_, _) => const PlansScreen()),
+          GoRoute(
+            path: '/staff',
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const StaffScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/products',
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const ProductsScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/taxes',
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const TaxesScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/plans',
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: PlansScreen(
+                initialProductId: int.tryParse(
+                  state.uri.queryParameters['product_id'] ?? '',
+                ),
+                initialProductName: state.uri.queryParameters['product_name'],
+              ),
+            ),
+          ),
           GoRoute(
             path: '/templates',
-            builder: (_, _) => const TemplatesScreen(),
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const TemplatesScreen(),
+            ),
           ),
-          GoRoute(path: '/pricing', builder: (_, _) => const PricingScreen()),
           GoRoute(
             path: '/quotations',
-            builder: (_, _) => const QuotationsScreen(),
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const QuotationsScreen(),
+            ),
           ),
           GoRoute(
             path: '/subscriptions',
-            builder: (_, _) => const SubscriptionsScreen(),
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const SubscriptionsScreen(),
+            ),
           ),
-          GoRoute(path: '/invoices', builder: (_, _) => const InvoicesScreen()),
-          GoRoute(path: '/payments', builder: (_, _) => const PaymentsScreen()),
+          GoRoute(
+            path: '/invoices',
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const InvoicesScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/payments',
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const PaymentsScreen(),
+            ),
+          ),
           GoRoute(
             path: '/discounts',
-            builder: (_, _) => const DiscountsScreen(),
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const DiscountsScreen(),
+            ),
           ),
-          GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
-          GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
+          GoRoute(
+            path: '/settings',
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const SettingsScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/profile',
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const ProfileScreen(),
+            ),
+          ),
           GoRoute(
             path: '/my-subscriptions',
-            builder: (_, _) => const MySubscriptionsScreen(),
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const MySubscriptionsScreen(),
+            ),
           ),
           GoRoute(
             path: '/my-invoices',
-            builder: (_, _) => const MyInvoicesScreen(),
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const MyInvoicesScreen(),
+            ),
           ),
           GoRoute(
             path: '/my-payments',
-            builder: (_, _) => const MyPaymentsScreen(),
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const MyPaymentsScreen(),
+            ),
           ),
           GoRoute(
             path: '/forbidden',
-            builder: (_, _) => const ForbiddenScreen(),
+            pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const ForbiddenScreen(),
+            ),
           ),
         ],
       ),

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/network/json.dart';
+import '../../../core/network/navigation_cache.dart';
 
 class Variant {
   Variant.fromJson(Map<String, dynamic> j)
@@ -53,18 +54,19 @@ class ProductsRepository {
   ProductsRepository(this._api);
   final ApiClient _api;
 
-  Future<Paged<Product>> list(ProductQuery q) => _api.getPaged(
-    '/products',
-    Product.fromJson,
-    query: {
-      'q': q.q,
-      'status': q.status,
-      'product_type': q.type,
-      'page': q.page,
-      'page_size': 20,
-      'sort': 'name',
-    },
-  );
+  Future<Paged<Product>> list(ProductQuery q, {int pageSize = 20}) =>
+      _api.getPaged(
+        '/products',
+        Product.fromJson,
+        query: {
+          'q': q.q,
+          'status': q.status,
+          'product_type': q.type,
+          'page': q.page,
+          'page_size': pageSize,
+          'sort': 'name',
+        },
+      );
 
   Future<Product> get(int id) async =>
       Product.fromJson(await _api.get('/products/$id') as Map<String, dynamic>);
@@ -94,14 +96,22 @@ final productDetailProvider = FutureProvider.autoDispose.family<Product, int>(
 );
 
 /// Active products with variants, for line pickers (plans, templates, pricing, discounts).
-final activeProductsProvider = FutureProvider.autoDispose<List<Product>>((
-  ref,
-) async {
-  final page = await ref.watch(productsRepositoryProvider).list((
-    q: '',
-    status: 'active',
-    type: null,
-    page: 1,
-  ));
-  return page.items;
-});
+final activeProductsProvider = FutureProvider.autoDispose<List<Product>>(
+  (ref) => cacheForNavigation(ref, () async {
+    final repo = ref.watch(productsRepositoryProvider);
+    final products = <Product>[];
+    var number = 1;
+    while (true) {
+      final page = await repo.list((
+        q: '',
+        status: 'active',
+        type: null,
+        page: number,
+      ), pageSize: 100);
+      products.addAll(page.items);
+      if (page.items.isEmpty || products.length >= page.total) break;
+      number++;
+    }
+    return products;
+  }),
+);

@@ -23,6 +23,18 @@ func TestCustomerPortal(t *testing.T) {
 	aCust := int64(e.call("GET", "/auth/me", alice, nil).data()["customer_id"].(float64))
 	bCust := int64(e.call("GET", "/auth/me", bob, nil).data()["customer_id"].(float64))
 	start := time.Now().Format("2006-01-02")
+
+	// Customer can request a quotation from a plan.
+	r = e.call("POST", "/me/quotations", alice, map[string]any{"plan_id": planID, "start_date": start})
+	e.expect(r, 200, "customer requests quotation")
+	if r.data()["status"] != "quotation" || int64(r.data()["customer_id"].(float64)) != aCust {
+		t.Fatalf("expected own quotation in quotation status: %v", r.data())
+	}
+	if int64(r.data()["plan_id"].(float64)) != planID {
+		t.Fatalf("quotation should use requested plan: %v", r.data())
+	}
+	e.expect(e.call("POST", "/me/quotations", bob, map[string]any{"plan_id": 99999999}), 400, "invalid plan in quotation request")
+
 	sub := func(cust int64) int64 {
 		r := e.call("POST", "/quotations", admin, map[string]any{"customer_id": cust, "plan_id": planID, "start_date": start})
 		e.expect(r, 201, "quotation")
@@ -34,8 +46,23 @@ func TestCustomerPortal(t *testing.T) {
 	// Alice sees only her own subscription and invoice.
 	r = e.call("GET", "/me/subscriptions", alice, nil)
 	e.expect(r, 200, "my subscriptions")
-	if list := r.Body["data"].([]any); len(list) != 1 || int64(list[0].(map[string]any)["id"].(float64)) != aSub {
-		t.Fatalf("alice should see exactly her subscription: %v", list)
+	if list := r.Body["data"].([]any); len(list) != 2 {
+		t.Fatalf("alice should see her quotation + subscription: %v", list)
+	} else {
+		seenSub, seenQuote := false, false
+		for _, row := range list {
+			rm := row.(map[string]any)
+			id := int64(rm["id"].(float64))
+			if id == aSub {
+				seenSub = true
+			}
+			if rm["status"] == "quotation" {
+				seenQuote = true
+			}
+		}
+		if !seenSub || !seenQuote {
+			t.Fatalf("alice portal list should include active sub and pending quotation: %v", list)
+		}
 	}
 	r = e.call("GET", "/me/invoices", alice, nil)
 	inv := r.Body["data"].([]any)

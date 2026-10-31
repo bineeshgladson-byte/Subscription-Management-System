@@ -14,7 +14,7 @@ import (
 // to email anyone". The customer id ALWAYS comes from the login token; someone
 // else's record answers 404, so it doesn't reveal that it exists.
 
-var portalSubStatuses = []string{"confirmed", "active", "paused", "closed", "renewed"}
+var portalSubStatuses = []string{"quotation", "confirmed", "active", "paused", "closed", "renewed"}
 
 func (s *SalesService) MySubscriptions(ctx context.Context, customerID int64, p pagination.Params) ([]dto.SubscriptionResponse, int64, error) {
 	return s.ListSubscriptions(ctx, SubscriptionFilter{Statuses: portalSubStatuses, CustomerID: customerID}, p)
@@ -24,10 +24,32 @@ func (s *SalesService) MySubscriptions(ctx context.Context, customerID int64, p 
 func (s *SalesService) mine(ctx context.Context, customerID, id int64) error {
 	var sub models.Subscription
 	err := s.db.WithContext(ctx).Select("id", "customer_id", "status").First(&sub, id).Error
-	if err != nil || sub.CustomerID != customerID || sub.Status == models.SubDraft || sub.Status == models.SubQuotation {
+	if err != nil || sub.CustomerID != customerID || sub.Status == models.SubDraft {
 		return apperr.NotFound("subscription")
 	}
 	return nil
+}
+
+// MyRequestQuotation lets a customer request a quotation from an active plan.
+// It creates the quotation under their own customer id and moves it to
+// "quotation" so the team can process it immediately.
+func (s *SalesService) MyRequestQuotation(ctx context.Context, customerID, userID int64, in dto.CreateMyQuotationRequest) (*dto.SubscriptionResponse, error) {
+	out, err := s.createQuotation(ctx, userID, dto.CreateQuotationRequest{
+		CustomerID: customerID,
+		PlanID:     in.PlanID,
+		StartDate:  in.StartDate,
+		ExpiryDate: in.ExpiryDate,
+	}, false)
+	if err != nil {
+		return nil, err
+	}
+	if out.Status == string(models.SubDraft) {
+		out, err = s.SendQuotation(ctx, out.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func (s *SalesService) MySubscription(ctx context.Context, customerID, id int64) (*dto.SubscriptionResponse, error) {

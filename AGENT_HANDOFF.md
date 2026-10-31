@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| **Current step** | **Admin panel complete end to end** (hackathon deadline push): quotations → confirm → active subscription + first invoice → automatic recurring invoices (billing run / hourly cron) → record payments (Gayatri's code) → paid; dashboard with MRR/ARR/revenue/outstanding/overdue. Not done for lack of time: OpenAPI + Postman entries for A7–A12, customer `/me/*` portal (Phase C). |
+| **Current step** | **Product-specific plans, customer action emails and 7/3/1-day renewal reminders enabled.** Admin creates tiers within a selected product; staff/customers browse product groups. Customer portal includes subscriptions, invoices, payments, Plans, Profile and Dashboard. Remaining work is listed in section 8. |
 | **Branch** | `ashlin_dev` (Ashlin's backend branch). `main` is the team integration branch. |
 | **Uncommitted work** | Everything from A3 handlers through A6 plus the frontend wiring (see the step log for files). Also modified but **not by the backend/wiring agent**: `frontend/lib/core/theme/app_theme.dart`, `features/auth/presentation/{auth_card,login_screen}.dart`, `auth/presentation/widgets/{brand_logo,logo_video_loader}.dart` (someone else's auth-UI work; leave as is). Ashlin commits by hand; see R1 and `git status`. |
 | **Is it running?** | `make dev` = backend (hot reload) + Flutter. Health: `curl localhost:8080/health` |
@@ -142,25 +142,28 @@ docs/api/openapi.yaml        THE API contract (validated with openapi-spec-valid
 | **A1 Customers** | ✅ committed | `/customers` list/create/get(+stats)/update, DELETE = archive (admin) | sign-up links to an existing customer by email; archive blocked by open items |
 | **A2 Taxes** | ✅ committed | `/taxes` list/get/create/update, DELETE = deactivate (admin) | rate string 0–100, 2 dp; `TAX_IN_USE` guard |
 | Reference Flutter UI | ✅ built | full-viewport workspace shell | Styling kept; the sample-data plans/dashboard bodies were replaced by live-API screens |
-| **A3 Products + variants** | ✅ built (partly committed) | `/products` list/get/create/update, DELETE = archive; `/products/:id/variants` add/update, DELETE = deactivate | variant price = sales + extra; staff see no cost/margin; `PRODUCT_IN_USE` / `VARIANT_IN_USE` guards |
-| **A4 Plans** | ✅ built (partly committed) | `/plans` list/get (all roles), create/update (admin), `PATCH /plans/:id/status` | price computed from lines (SQL `recalcSQL`); customers see only active + available today; `PLAN_IN_USE`, `PLAN_HAS_INACTIVE_PRODUCTS` |
+| **A3 Products + variants** | ✅ built (partly committed) | `/products` list/get/create/update, DELETE = archive; `/products/:id/variants` add/update, DELETE = deactivate | variant price = sales + extra; staff see no cost/margin; `PRODUCT_IN_USE` / `VARIANT_IN_USE` guards; form close lifecycle fixed and regression tested |
+| **A4 Plans** | ✅ built (partly committed) | `/plans` list/get (all roles), create/update (admin), `PATCH /plans/:id/status` | product-based browsing across roles; `product_id` filter; selected product prefilled on create; price computed from lines; customer availability/permissions preserved |
+| Customer action emails + renewal reminders | ✅ enabled | automatic transactional queue + scheduler | customer only; detailed invoice emails and receipts; 7/3/1-day reminders; retries and deduplication; early renewal keeps current contract active |
 | **A5 Quotation templates** | ✅ built | `/quotation-templates` list/get/create/update, DELETE = deactivate | lines default to the plan's products; `estimated_total` |
 | **A6 Discounts + pricing engine** | ✅ built | `/discounts` CRUD (admin), `/discounts/:id/usages`, `POST /pricing/preview` (admin + staff) | pure `service.Price()`; `DiscountRepo.ReserveUse/ReleaseUse` ready for invoices (A9) |
 | **Frontend wired to the API** | ✅ built | Dashboard, Customers, Staff, Products (+variants), Taxes, Plans, Templates, Discounts, Price calculator, Profile | quotations/subscriptions/invoices/payments/reports/settings stay placeholders until their APIs exist |
 | **A7 Quotations · A8 Subscriptions** | ✅ built by Ashlin's agent (Bineesh's branch NOT merged; it would conflict in routes_subscriptions.go/main.go) | `/quotations` list/create/get/send/confirm/cancel; `/subscriptions` list/get/pause/resume/close/renew/bill-now | `service/sales_service.go` |
 | **A9 Billing/invoices · A10 Payments** | ✅ | `/invoices` list/get/confirm/cancel/send, `POST /invoices/:id/payments` (Gayatri's files copied verbatim from `gayatri_billing`), `GET /payments` | billing engine in `sales_service.go` (`billNextPeriod`, `RunBilling`) |
 | **A11 Dashboard · A12 Admin billing run** | ✅ | `GET /dashboard/summary?from&to` (money admin-only), `POST /admin/billing/run {as_of}` (as_of dev-only); scheduler calls `RunBilling` hourly + daily | |
-| Phase B Staff flow audit · Phase C Customer `/me/*` | ⏳ after Phase A | | |
+| **Phase C Customer portal** | ✅ | `/me/subscriptions[/:id]`, `POST /me/subscriptions/:id/{pause,resume,close,renew}`, `/me/invoices[/:id]`, `/me/payments` | `service/portal.go`, `handler/portal_handler.go`, `routes_me.go`; frontend `features/portal/presentation/portal_screens.dart`; `TestCustomerPortal`; all customer sections styled consistently; immediate workspace navigation with brief account-scoped caching |
+| Phase B Staff flow audit | ⏳ not formally audited | | staff use the same screens; RBAC enforced per route |
 
-**Tests right now:** backend 15 integration tests pass (`make be-itest`; new: `TestQuotationTemplates`,
-`TestDiscountsAndPricing`), unit tests incl. pricing engine (Acme ₹16,556.58, Rahul ₹1,178.82, best-of, minimums, spread, cap).
-Frontend: 17 widget/unit tests pass (`flutter test`; `test/workspace_test.dart` uses a `FakeApi` ApiClient with API-shaped JSON),
+**Tests right now:** backend 19 integration tests pass (latest feature run in a separate migrated database with a fake mailer; no live customer/test mail),
+Go unit tests and vet pass. Earlier coverage included `TestQuotationTemplates`,
+`TestDiscountsAndPricing`, unit tests incl. pricing engine (Acme ₹16,556.58, Rahul ₹1,178.82, best-of, minimums, spread, cap).
+Frontend: 45 widget/unit tests pass (`flutter test`; 1 opt-in live API test skipped; FakeApi uses API-shaped JSON),
 plus opt-in `LIVE_API=http://localhost:8080/api/v1 flutter test test/live_api_test.dart` (real repos vs the live backend, passes).
 Postman: 140 requests / 16 folders; folders 0,1,2,5,11–15 = 90 requests / 165 assertions all pass.
 
 **Migrations applied:** `20261101000000_init_schema` (20 tables), `20261101000100_customers_unique_email`,
 `20261101000200_taxes_unique_name_ci`, `20261101000300_products_unique_active_name`, `20261101000400_plans_unique_name_ci`,
-`20261101000500_templates_unique_name_ci`, `20261101000600_discounts_code_ci`.
+`20261101000500_templates_unique_name_ci`, `20261101000600_discounts_code_ci`, `20261101000700_email_notifications`.
 
 ---
 
@@ -197,6 +200,82 @@ Postman: 140 requests / 16 folders; folders 0,1,2,5,11–15 = 90 requests / 165 
 ---
 
 ## 7. Step log (newest first)
+
+### 2026-10-31 · Product plans + customer action emails + renewal reminders ✅ (uncommitted)
+- User requested multiple plans per product across admin/staff/customer, action/invoice emails and automatic renewal reminders. User explicitly chose **7, 3 and 1 day before renewal** and **customer emails only**.
+- Plans now browse by product for every role. Admin can select a product (including one with zero plans) and create different tiers with its product line prefilled. Staff view groups; customers see only eligible plans. Product detail and dashboard plan previews link directly to the product's plans. Product pickers load all pages; product edits invalidate cached plan prices.
+- API: `GET /plans?product_id=...` validates the filter and retains customer availability rules. Existing bundle/override pricing and admin-only writes preserved; no catalogue schema redesign.
+- New `email_notifications` outbox committed with business actions; immediate asynchronous delivery plus one-minute retry worker. Quotation creation/sending/cancellation/expiry, subscription confirmation/activation/pause/resume/closure, renewal requests, issued/cancelled/paid invoices and payment receipts covered. Composite customer/renewal actions suppress redundant internal creation emails. SMTP now has connection/read deadlines and cancellation support.
+- Reminders use contract expiry when present, otherwise next recurring billing date, for renewable subscriptions. Unique subscription/date/lead-time keys prevent repeated cron notifications. Existing renewal requests suppress more reminders; unsent reminders invalidated by lifecycle changes are discarded. No admin/staff copies and no automatic renewal/charge.
+- Renewal requests are atomic, visible as quotations in the portal and reject duplicates. The existing subscription stays active until the confirmed replacement starts. Same-day pause/resume reuses its existing billing period instead of attempting a duplicate invoice.
+- Migration `20261101000700` tested up/down/up in an isolated `subly_feature_test` database, then applied to the running dev stack. Integration tests used that separate DB and a fake mailer; the temporary database was dropped after verification. Production customer records were not populated with test fixtures, and no test emails were sent to real recipients.
+- Validation: Go unit tests + vet pass; **19 integration tests pass** including concurrent reminder deduplication, 7/3/1 schedule, delivery retry/restart, obsolete reminder suppression, advance renewal and product filters across roles. SMTP tests use a local fake server. Flutter analyze clean, **45 tests pass / 1 opt-in skipped**, release web build + Wasm dry run pass; existing Cupertino font warning remains. API/database health OK. OpenAPI YAML parses; product filter documented.
+- Files changed for this step: `backend/cmd/api/main.go`; `backend/internal/{handler/plan_handler.go,jobs/scheduler.go,repository/plan_repo.go,service/{notifications,payment_service,plan_service,portal,sales_service}.go}`; `backend/pkg/mailer/{mailer,mailer_test}.go`; `backend/tests/integration/{auth_test,notifications_test,product_plans_test}.go`; migration `database/migrations/20261101000700_email_notifications.{up,down}.sql`; `docs/api/openapi.yaml`; `frontend/lib/core/router/app_router.dart`; `frontend/lib/features/{dashboard/presentation/customer_dashboard.dart,plans/{data/plans_api,presentation/plans_screen}.dart,products/{data/products_api,presentation/products_screen}.dart}`; `frontend/test/workspace_test.dart`; `README.md`, `database/README.md`, this handoff. Other existing changes preserved.
+- Next: live customer demo of product-tier selection, quotation confirmation, invoice/receipt delivery and renewal with the existing SMTP settings. Backend must be running for scheduled jobs. SMTP has the normal at-least-once crash boundary (accepted email before delivery acknowledgement is persisted can be retried); this is documented in README.
+
+### 2026-10-31 · Immediate workspace navigation + customer section polish ✅ (uncommitted)
+- User requested removal of delayed page-switch animations and application of the dashboard style across customer sections.
+- `core/router/app_router.dart`: shell and all workspace destinations use `NoTransitionPage` with route keys. Login/auth routes retain their existing behavior.
+- New `core/network/navigation_cache.dart`: successful requests stay alive for two minutes after their last listener leaves. Account id/role changes invalidate them; errors are not retained. Applied to plan queries, customer lists/details and Profile. Dashboard now shares the Plans query and warms the first subscriptions/invoices/payments/Profile pages independently of dashboard loading. Refresh buttons and existing mutation invalidations fetch current records.
+- New `core/widgets/customer_widgets.dart`: shared lavender intro panels, record cards, responsive facts, sections and empty states. Applied to customer Plans browsing, Subscriptions, Invoices, Payments and Profile. Subscription actions, invoice details, pagination, quotation requests, editing and password changes remain wired to existing APIs.
+- Validation: analyzer clean; 44 tests passed / 1 opt-in live API skipped; release web build passed. Production-router test proves a single-frame page replacement, no transition pages, shared catalogue fetch, cached revisits and explicit refresh. Account-change test proves refetching. Desktop/phone/2× text and empty-state captures reviewed in `~/Documents/subly-ui-preview/customer-*.png`.
+- Changed files: `core/{router/app_router.dart,network/navigation_cache.dart,widgets/customer_widgets.dart}`, `features/{dashboard/presentation/dashboard_screen.dart,plans/data/plans_api.dart,plans/presentation/plans_screen.dart,portal/presentation/portal_screens.dart,profile/data/profile_api.dart,profile/presentation/profile_screen.dart,sales/data/sales_api.dart}`, `test/workspace_test.dart` (all under `frontend/`), and this handoff. Existing unrelated changes preserved.
+- Next: continue live browser demo checks, including customer navigation and lifecycle actions. Initial uncached loads still depend on the API; customer pages provide loading/error/retry feedback.
+
+### 2026-10-31 · Customer dashboard visual redesign ✅ (uncommitted)
+- User requested improvement to the customer Overview screenshot. Added `customer_dashboard.dart` and routed the existing customer branch of `dashboard_screen.dart` into it; admin/staff dashboards retain their existing behavior.
+- Lavender welcome panel with a decorative subscription-card illustration, account identity/profile panel, plan previews with live INR prices/cadence/included products, and navigation shortcuts to subscriptions, invoices, and payments. No fake statistics or new API dependencies.
+- Responsive single/two-column layout; a single available plan uses a horizontal card on desktop. Empty catalogue, narrow screens, landscape and 2× text supported. Uses existing Poppins, Material icons and workspace colors.
+- Validation: analyzer clean; 24 tests passed / 1 opt-in live API skipped; release web build and Wasm dry run passed (existing Cupertino font warning). Six new dashboard checks cover desktop, phone, landscape, large text, zero/one plans and navigation to catalogue. Rendered captures visually reviewed in `~/Documents/subly-ui-preview/customer-dashboard-*.png`.
+- Running Flutter web process on :5000 hot-restarted successfully. Changed files: `frontend/lib/features/dashboard/presentation/{customer_dashboard,dashboard_screen}.dart`, `frontend/test/workspace_test.dart`, `AGENT_HANDOFF.md`.
+- Next: continue live browser demo checks in section 8.
+
+### 2026-10-31 · Products red error screen fixed ✅ (uncommitted)
+- Reproduced by typing in New product and cancelling: text controllers were disposed while the closing dialog still used them, cascading into Flutter's `_dependents.isEmpty` assertion.
+- `frontend/lib/core/widgets/ui_kit.dart`: `showApiForm` now waits for the dialog route's `completed` future before returning, so callers dispose controllers after its fields leave the tree. Shared fix also protects variant and other API forms.
+- `frontend/test/workspace_test.dart`: Cancel and Save regression cases fill a product form, close it, and reopen it without widget errors; fake product creation returns API-shaped JSON.
+- Validation: `flutter analyze` clean; `flutter test` 18 passed / 1 opt-in live API test skipped; `flutter build web` succeeded. Existing Cupertino icon font warning remains. Running Flutter process on :5000 hot-restarted successfully.
+- Changed files for this fix: `frontend/lib/core/widgets/ui_kit.dart`, `frontend/test/workspace_test.dart`, `AGENT_HANDOFF.md`. Other existing work preserved.
+- Next: continue browser demo checks in section 8, including product and variant form closure.
+
+### 2026-10-31 · Plans screen redesign — product-first browse + tier cards ✅ (uncommitted)
+- **Customer** now lands on a product browse grid, derived from the plans the customer can already see (no backend change — plans endpoint already embeds `products`). Each product card: tinted tier icon, product name, "from ₹XXX", plan count pill, billing cadences pill, "View plans" CTA.
+- Picking a product shows every active+available plan that bundles it, rendered as the tier-style pricing cards (sparkle / lightning / crown / enterprise icon). Second tier gets the "Most popular" overlay badge. CTA stays `Request quotation` → `POST /me/quotations`.
+- A back/breadcrumb button ("All products") returns to the browse grid. Search in the browse view filters by product name; Billing filter still re-queries plans.
+- **Admin / staff** keep the full plan list (no product gate) but now use the same tier cards, with Edit / Archive in a top-right overflow menu (admin), and a subscribers / MRR-contribution footer (staff + admin). Top of the admin page gets a 4-tile metrics row: Total plans · Available now · Active subscribers · Total MRR from plans.
+- Updated `test/workspace_test.dart`: admin/staff/customer plan tests rewritten against the new UX (customer flow now opens via the product card first). 16 tests pass, 1 skipped (unchanged); analyzer clean.
+- Hot-restart signalled to the running Flutter dev process on :5000.
+- Files: `frontend/lib/features/plans/presentation/plans_screen.dart` (rewritten), `frontend/test/workspace_test.dart` (plan tests updated), `AGENT_HANDOFF.md`.
+
+### 2026-10-31 · Full stack restarted ✅
+- `make dev-stop` + `docker compose --profile dev up -d --build db migrate mailpit swagger api-dev` → API `/health` ok, DB ok. Flutter web (debug) on `0.0.0.0:5000` via `flutter run -d web-server`, backgrounded. Data unchanged from the clean-up (2 users, 1 customer).
+
+### 2026-10-31 · Removed all fake data from the dev DB ✅
+- Code and seeds were already clean (seed file is a no-op; only form hint text like "Jane Doe" remains in the login screen).
+- Dev DB held integration-test leftovers (`*@test.brightloop` users/customers, "Seat 1793…" products, test plans/taxes,
+  subscriptions, invoices, payments). Truncated all catalogue/sales tables (`RESTART IDENTITY`) and deleted the test users/customers.
+- Kept: `admin@brightloop.local` (seed admin) and `abraranas@gmail.com` (Abrar's real sign-up, customer 22, had no subscriptions).
+- **Note:** `make be-itest` runs against the dev DB and will re-create `@test.brightloop` rows; repeat the clean-up after running it.
+
+### 2026-10-31 · Removed Price calculator + demo seed data ✅ (uncommitted)
+- Frontend: removed Price calculator from navigation and router (`/pricing` no longer reachable from the app menu/routes).
+- Sidebar wording updated: plan menu label now stays `Plans` (no `Pricing & Plans`).
+- UI tests updated to remove the Price calculator screen route/import/test case.
+- Database seeds: `database/seeds/01_catalog.sql` is now intentionally no-op, so `make seed` no longer inserts fake/demo catalogue rows.
+- Docs updated so seed behavior is explicit (`README.md`, `database/README.md`, Makefile help text).
+
+### 2026-10-31 · Customer plan → quotation request ✅ (uncommitted)
+- Added customer self-service endpoint `POST /me/quotations` (JWT customer only). Input is minimal (`plan_id`, optional dates); customer id comes from token.
+- Service creates the quotation using existing pricing/catalog rules and immediately moves it to `quotation` state so staff can process it. Customers now see `quotation` rows in **My subscriptions** (still never `draft`).
+- Frontend plans page now shows **Request quotation** for customer users on available plans. Action calls `/me/quotations`; success refreshes portal data.
+- Integration coverage extended in `TestCustomerPortal` (request quote success + invalid plan). `make be-itest` passes; `flutter analyze` passes.
+
+### 2026-10-31 · Customer portal ✅ (uncommitted)
+- Only what the brief asks: customers see ONLY their own subscriptions, invoices (confirmed/paid only) and payments, and can
+  pause / resume / renew / close their own subscription where the plan allows (renew creates a renewal quotation for staff).
+  Customer id from the JWT; other people's records → 404. Removed the unbuilt /me stubs (request plan, accept, simulated pay, pdf, me/dashboard).
+- Frontend: customer menu = Dashboard, Plans, My subscriptions, My invoices, Payment history, Profile.
+- 17 integration tests pass (`TestCustomerPortal` new); 17 frontend tests pass; web build OK. DB wiped again (only admin).
 
 ### 2026-10-31 · Menu clean-up ✅ (uncommitted)
 - Removed the Reports page (placeholder; the dashboard is the summary view) and the notifications bell (no feature behind it).
@@ -329,21 +408,12 @@ Postman: 140 requests / 16 folders; folders 0,1,2,5,11–15 = 90 requests / 165 
 
 ---
 
-## 8. Next step (Ashlin): A11 Dashboard/reports + A12 admin billing run
+## 8. Next steps (priority order — see also `~/Documents/ANTIGRAVITY_PROMPT.md`)
 
-Brief: *"The finance lead wants one place to see active subscriptions, revenue, payments and overdue invoices, with
-filters and a summary view … every page should still respond in under two seconds."*
-
-- **Depends on** A7–A10 data (subscriptions, invoices, payments) from Bineesh/Gayatri. Merge their branches first, then:
-  - `GET /dashboard/summary?from&to` (admin all; staff without money totals): customers, active/total subscriptions, MRR
-    (daily×30, weekly×52/12, monthly, yearly/12, each ÷ interval), ARR = MRR×12, revenue received (completed payments),
-    outstanding (confirmed invoices' amount_due), overdue (count + amount), recent payments.
-  - `GET /reports/revenue?from&to&group_by=month`, `GET /reports/subscriptions`, `GET /reports/overdue`.
-  - Performance: load-test seed (5k customers / 10k subscriptions), then `EXPLAIN ANALYZE`, target < 300 ms per query.
-  - Frontend: replace the dashboard's "Revenue … appear here once billing is live" note with the new endpoint; build `reports_screen.dart`.
-- **A12:** `POST /admin/billing/run {as_of}` (dev-only as_of) → calls the A9 billing service; build `settings_screen.dart` with a "Run billing" button.
-- **For teammates (A7–A9):** price lines with `resolveLines` + `service.Price()` + `DiscountRepo.Eligible`; reserve discount uses in the
-  invoice transaction; quotation lines can start from `GET /quotation-templates/:id` (lines, validity_days, payment_terms_days).
+1. **Manual demo run in the browser** (`make dev`, admin login) following the demo script in the prompt; fix anything broken. Product form close regression is fixed/tested; confirm product and variant forms in the live browser. Customer sections now share the dashboard styling; check instant page navigation and Refresh with live records.
+2. **OpenAPI + Postman** for A7–A12 and `/me/*` (endpoints exist; docs don't).
+3. **Staff flow check:** log in as staff; confirm admin-only actions are hidden and return 403 (taxes/products/plans/discounts writes, staff, settings, money on dashboard).
+4. Optional if time: invoice PDF (currently a printable view + Ctrl+P), editing a draft quotation (currently cancel + recreate), load test.
 
 ---
 

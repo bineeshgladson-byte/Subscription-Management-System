@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/customer_widgets.dart';
 import '../../../core/widgets/ui_kit.dart';
 import '../../sales/data/sales_api.dart';
 import '../../sales/presentation/sales_widgets.dart';
@@ -21,29 +22,65 @@ class _MySubscriptionsState extends ConsumerState<MySubscriptionsScreen> {
   @override
   Widget build(BuildContext context) => PageFrame(
     title: 'My subscriptions',
-    subtitle:
-        'Pause, resume, renew or close a subscription yourself, where your plan allows it.',
+    subtitle: 'Your plans, renewals and quotations, neatly organised.',
+    action: OutlinedButton.icon(
+      onPressed: () => ref.invalidate(mySubscriptionsProvider),
+      icon: const Icon(Icons.refresh_rounded, size: 18),
+      label: const Text('Refresh'),
+    ),
+    toolbar: const CustomerIntro(
+      icon: Icons.autorenew_rounded,
+      eyebrow: 'Your subscriptions',
+      title: 'Stay on top of every plan.',
+      message:
+          'Check your next billing date, review a quotation or manage an existing subscription.',
+    ),
     child: AsyncView(
       value: ref.watch(mySubscriptionsProvider(_page)),
       onRetry: () => ref.invalidate(mySubscriptionsProvider),
       builder: (page) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (page.items.isEmpty)
-            const EmptyState(
-              icon: Icons.autorenew,
-              title: 'No subscriptions yet',
-              message: 'Your subscriptions appear here once confirmed.',
+          CustomerSection(
+            title: 'Your plan collection',
+            caption:
+                '${page.total} record${page.total == 1 ? '' : 's'} · subscriptions and quotation requests',
+            child: Column(
+              children: [
+                if (page.items.isEmpty)
+                  const CustomerEmpty(
+                    icon: Icons.layers_outlined,
+                    title: 'Your next chapter starts with a plan',
+                    message:
+                        'Explore the catalogue and request a quotation. Your plans will appear here as they move forward.',
+                    browse: true,
+                  ),
+                for (final s in page.items)
+                  CustomerRecord(
+                    icon: Icons.autorenew_rounded,
+                    title: s.planName,
+                    reference: s.number,
+                    status: statusPill(s.status),
+                    facts: [
+                      ('Per billing period · incl. tax', Fmt.inr(s.total)),
+                      ('Billing cycle', s.billingLabel),
+                      (
+                        'Next invoice',
+                        s.nextBillingDate != null && s.status == 'active'
+                            ? Fmt.date(s.nextBillingDate!)
+                            : '—',
+                      ),
+                    ],
+                    action: OutlinedButton.icon(
+                      onPressed: () => _detail(context, ref, s.id),
+                      icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                      iconAlignment: IconAlignment.end,
+                      label: const Text('View subscription'),
+                    ),
+                  ),
+              ],
             ),
-          for (final s in page.items)
-            ResourceTile(
-              title: '${s.planName} · ${s.number}',
-              subtitle:
-                  '${Fmt.inr(s.total)} per period (${s.billingLabel})'
-                  '${s.nextBillingDate != null && s.status == 'active' ? ' · next invoice ${Fmt.date(s.nextBillingDate!)}' : ''}',
-              pills: [statusPill(s.status)],
-              onTap: () => _detail(context, ref, s.id),
-            ),
+          ),
           Pager(
             page: page.page,
             pageSize: page.pageSize,
@@ -193,28 +230,59 @@ class _MyInvoicesState extends ConsumerState<MyInvoicesScreen> {
   @override
   Widget build(BuildContext context) => PageFrame(
     title: 'My invoices',
-    subtitle:
-        'Every invoice issued to you, with what is paid and what is still due.',
+    subtitle: 'A clear view of your bills and what’s due.',
+    action: OutlinedButton.icon(
+      onPressed: () => ref.invalidate(myInvoicesProvider),
+      icon: const Icon(Icons.refresh_rounded, size: 18),
+      label: const Text('Refresh'),
+    ),
+    toolbar: const CustomerIntro(
+      icon: Icons.receipt_long_outlined,
+      eyebrow: 'Billing, made clear',
+      title: 'Every invoice. Every detail.',
+      message:
+          'Review your billing periods, payment status and outstanding amounts in one place.',
+    ),
     child: AsyncView(
       value: ref.watch(myInvoicesProvider(_page)),
       onRetry: () => ref.invalidate(myInvoicesProvider),
       builder: (page) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (page.items.isEmpty)
-            const EmptyState(
-              icon: Icons.receipt_long_outlined,
-              title: 'No invoices yet',
-              message: 'Invoices appear here when they are issued.',
+          CustomerSection(
+            title: 'Your invoices',
+            caption:
+                '${page.total} invoice${page.total == 1 ? '' : 's'} in your account · open an invoice for the full breakdown',
+            child: Column(
+              children: [
+                if (page.items.isEmpty)
+                  const CustomerEmpty(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'A fresh start for your billing',
+                    message:
+                        'No invoices have been issued yet. When your subscription is billed, you’ll find the full breakdown here.',
+                  ),
+                for (final i in page.items)
+                  CustomerRecord(
+                    icon: Icons.receipt_long_outlined,
+                    title: i.number,
+                    reference: period(i),
+                    status: invoicePills(i),
+                    facts: [
+                      ('Invoice total', Fmt.inr(i.total)),
+                      ('Amount due', Fmt.inr(i.amountDue)),
+                      ('Due date', Fmt.date(i.dueDate)),
+                    ],
+                    action: OutlinedButton.icon(
+                      onPressed: () => _invoice(context, ref, i.id),
+                      icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                      iconAlignment: IconAlignment.end,
+                      label: const Text('View invoice'),
+                    ),
+                  ),
+              ],
             ),
-          for (final i in page.items)
-            ResourceTile(
-              title: '${i.number} · ${Fmt.inr(i.total)}',
-              subtitle:
-                  '${period(i)} · due ${Fmt.date(i.dueDate)} · still due ${Fmt.inr(i.amountDue)}',
-              pills: [invoicePills(i)],
-              onTap: () => _invoice(context, ref, i.id),
-            ),
+          ),
           Pager(
             page: page.page,
             pageSize: page.pageSize,
@@ -302,26 +370,54 @@ class _MyPaymentsState extends ConsumerState<MyPaymentsScreen> {
   @override
   Widget build(BuildContext context) => PageFrame(
     title: 'Payment history',
-    subtitle: 'Payments we have received from you.',
+    subtitle: 'Your payment records, without the paperwork.',
+    action: OutlinedButton.icon(
+      onPressed: () => ref.invalidate(myPaymentsProvider),
+      icon: const Icon(Icons.refresh_rounded, size: 18),
+      label: const Text('Refresh'),
+    ),
+    toolbar: const CustomerIntro(
+      icon: Icons.account_balance_wallet_outlined,
+      eyebrow: 'Your payment record',
+      title: 'Keep every payment in view.',
+      message:
+          'See when you paid, how you paid and which invoice each payment belongs to.',
+    ),
     child: AsyncView(
       value: ref.watch(myPaymentsProvider(_page)),
       onRetry: () => ref.invalidate(myPaymentsProvider),
       builder: (page) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (page.items.isEmpty)
-            const EmptyState(
-              icon: Icons.payments_outlined,
-              title: 'No payments yet',
-              message: 'Your payments appear here once recorded.',
+          CustomerSection(
+            title: 'Your transactions',
+            caption:
+                '${page.total} payment${page.total == 1 ? '' : 's'} recorded',
+            child: Column(
+              children: [
+                if (page.items.isEmpty)
+                  const CustomerEmpty(
+                    icon: Icons.account_balance_wallet_outlined,
+                    title: 'Your payment story starts here',
+                    message:
+                        'Once a payment is recorded, you’ll see the amount, method and invoice reference here.',
+                  ),
+                for (final p in page.items)
+                  CustomerRecord(
+                    icon: Icons.account_balance_wallet_outlined,
+                    title: Fmt.inr(p.amount),
+                    reference: p.number,
+                    status: statusPill(p.status),
+                    facts: [
+                      ('Payment date', Fmt.date(p.paymentDate)),
+                      ('Payment method', paymentMethods[p.method] ?? p.method),
+                      ('Invoice', p.invoiceNumber ?? '${p.invoiceId}'),
+                      if (p.reference != null) ('Reference', p.reference!),
+                    ],
+                  ),
+              ],
             ),
-          for (final p in page.items)
-            ResourceTile(
-              title: Fmt.inr(p.amount),
-              subtitle:
-                  '${Fmt.date(p.paymentDate)} · ${paymentMethods[p.method] ?? p.method} · invoice ${p.invoiceNumber ?? p.invoiceId}${p.reference == null ? '' : ' · ${p.reference}'}',
-              pills: [statusPill(p.status)],
-            ),
+          ),
           Pager(
             page: page.page,
             pageSize: page.pageSize,

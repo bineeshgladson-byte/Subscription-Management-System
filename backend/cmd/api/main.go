@@ -79,7 +79,7 @@ func run() error {
 	discountSvc := service.NewDiscountService(db, discountRepo, productRepo, clk)
 	pricingSvc := service.NewPricingService(db, productRepo, discountRepo, clk)
 	salesSvc := service.NewSalesService(db, productRepo, discountRepo, clk, mail, cfg.InvoiceAutoConfirm)
-	paymentSvc := service.NewPaymentService(db, repository.NewPaymentRepo(), repository.NewInvoiceRepo())
+	paymentSvc := service.NewPaymentService(db, repository.NewPaymentRepo(), repository.NewInvoiceRepo(), mail)
 
 	subSvc := service.NewSubscriptionService(db, subRepo, customerRepo, planRepo, templateRepo, productRepo, discountRepo, mail)
 	invSvc := service.NewInvoiceService(db, invoiceRepo, subRepo, customerRepo, cfg.InvoiceAutoConfirm, mail)
@@ -121,7 +121,7 @@ func run() error {
 	sched := jobs.NewScheduler(clk, func(ctx context.Context, asOf time.Time) {
 		r := salesSvc.RunBilling(ctx, asOf)
 		slog.Info("billing run", "as_of", r.AsOf, "activated", r.Activated, "invoices", r.InvoicesCreated, "closed", r.Closed, "errors", len(r.Errors))
-	})
+	}, salesSvc.DispatchEmails)
 	if err := sched.Start(cfg.BillingCron); err != nil {
 		return err
 	}

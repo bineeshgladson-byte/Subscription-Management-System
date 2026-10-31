@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/network/json.dart';
+import '../../../core/network/navigation_cache.dart';
 
 class PlanLine {
   PlanLine.fromJson(Map<String, dynamic> j)
@@ -69,11 +70,12 @@ class PlansRepository {
   PlansRepository(this._api);
   final ApiClient _api;
 
-  Future<Paged<Plan>> list(PlanQuery q) => _api.getPaged(
+  Future<Paged<Plan>> list(PlanQuery q, {int? productId}) => _api.getPaged(
     '/plans',
     Plan.fromJson,
     query: {
       'q': q.q,
+      'product_id': productId,
       'status': q.status,
       'billing_period': q.period,
       'page_size': 100,
@@ -93,7 +95,8 @@ final plansRepositoryProvider = Provider(
 );
 
 final plansProvider = FutureProvider.autoDispose.family<Paged<Plan>, PlanQuery>(
-  (ref, q) => ref.watch(plansRepositoryProvider).list(q),
+  (ref, q) =>
+      cacheForNavigation(ref, () => ref.watch(plansRepositoryProvider).list(q)),
 );
 
 final activePlansProvider = FutureProvider.autoDispose<List<Plan>>(
@@ -103,3 +106,13 @@ final activePlansProvider = FutureProvider.autoDispose<List<Plan>>(
     period: null,
   ))).items,
 );
+
+final productPlansProvider = FutureProvider.autoDispose
+    .family<Paged<Plan>, ({PlanQuery query, int productId})>(
+      (ref, selection) => cacheForNavigation(
+        ref,
+        () => ref
+            .watch(plansRepositoryProvider)
+            .list(selection.query, productId: selection.productId),
+      ),
+    );

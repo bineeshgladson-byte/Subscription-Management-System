@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/network/json.dart';
+import '../../../core/network/navigation_cache.dart';
 
 /// Quotations, subscriptions, invoices, payments, dashboard summary and billing run.
 
@@ -188,6 +189,7 @@ typedef InvoiceQuery = ({String q, String? status, bool overdue, int page});
 typedef PaymentQuery = ({String q, String? method, int page});
 
 const subStatuses = {
+  'quotation': 'Quotation',
   'confirmed': 'Confirmed',
   'active': 'Active',
   'paused': 'Paused',
@@ -275,6 +277,10 @@ class SalesRepository {
   );
   Future<void> myAction(int id, String action) =>
       _api.post('/me/subscriptions/$id/$action');
+  Future<Subscription> requestMyQuotation(Map<String, dynamic> body) async =>
+      Subscription.fromJson(
+        await _api.post('/me/quotations', body: body) as Map<String, dynamic>,
+      );
   Future<Paged<Invoice>> myInvoices(int page) => _api.getPaged(
     '/me/invoices',
     Invoice.fromJson,
@@ -335,22 +341,37 @@ final dashboardSummaryProvider = FutureProvider.autoDispose
 
 final mySubscriptionsProvider = FutureProvider.autoDispose
     .family<Paged<Subscription>, int>(
-      (ref, p) => ref.watch(salesRepositoryProvider).mySubscriptions(p),
+      (ref, p) => cacheForNavigation(
+        ref,
+        () => ref.watch(salesRepositoryProvider).mySubscriptions(p),
+      ),
     );
 final mySubscriptionProvider = FutureProvider.autoDispose
     .family<Subscription, int>(
-      (ref, id) => ref.watch(salesRepositoryProvider).mySubscription(id),
+      (ref, id) => cacheForNavigation(
+        ref,
+        () => ref.watch(salesRepositoryProvider).mySubscription(id),
+      ),
     );
 final myInvoicesProvider = FutureProvider.autoDispose
     .family<Paged<Invoice>, int>(
-      (ref, p) => ref.watch(salesRepositoryProvider).myInvoices(p),
+      (ref, p) => cacheForNavigation(
+        ref,
+        () => ref.watch(salesRepositoryProvider).myInvoices(p),
+      ),
     );
 final myInvoiceProvider = FutureProvider.autoDispose.family<Invoice, int>(
-  (ref, id) => ref.watch(salesRepositoryProvider).myInvoice(id),
+  (ref, id) => cacheForNavigation(
+    ref,
+    () => ref.watch(salesRepositoryProvider).myInvoice(id),
+  ),
 );
 final myPaymentsProvider = FutureProvider.autoDispose
     .family<Paged<PaymentRow>, int>(
-      (ref, p) => ref.watch(salesRepositoryProvider).myPayments(p),
+      (ref, p) => cacheForNavigation(
+        ref,
+        () => ref.watch(salesRepositoryProvider).myPayments(p),
+      ),
     );
 
 /// Refreshes everything that billing / payments can change.
