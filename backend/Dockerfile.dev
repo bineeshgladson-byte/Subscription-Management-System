@@ -1,0 +1,7 @@
+# Development image: Go toolchain + Air for hot reload. Source code is
+# mounted from ./backend at runtime, so nothing is copied in here.
+FROM golang:1.26-alpine
+ENV GOTOOLCHAIN=local CGO_ENABLED=0
+RUN go install github.com/air-verse/air@v1.62.0
+WORKDIR /src
+CMD ["air", "-c", ".air.toml"]
