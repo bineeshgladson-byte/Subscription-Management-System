@@ -33,6 +33,27 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script>
+    window.openRazorpayModal = function(options, onResult) {
+      options = options || {};
+      options.handler = function(response) {
+        onResult({
+          status: 'success',
+          payment_id: response.razorpay_payment_id || '',
+          order_id: response.razorpay_order_id || '',
+          signature: response.razorpay_signature || ''
+        });
+      };
+      options.modal = {
+        ondismiss: function() {
+          onResult({ status: 'dismissed' });
+        }
+      };
+      var rzp = new Razorpay(options);
+      rzp.open();
+    };
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

@@ -50,20 +50,41 @@ func Logger() gin.HandlerFunc {
 	}
 }
 
-// CORS lets the Flutter web app call the API. With no origins configured,
-// cross-origin requests are simply not allowed (instead of crashing).
+// CORS lets the Flutter web app call the API. It allows explicitly configured
+// origins, wildcard "*", and any localhost / 127.0.0.1 origin (needed when Flutter
+// web is launched on ephemeral development ports).
 func CORS(allowedOrigins []string) gin.HandlerFunc {
-	if len(allowedOrigins) == 0 {
-		return func(c *gin.Context) { c.Next() }
-	}
-	return cors.New(cors.Config{
-		AllowOrigins:     allowedOrigins,
+	cfg := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"},
 		ExposeHeaders:    []string{"X-Request-ID"},
 		AllowCredentials: false,
 		MaxAge:           12 * time.Hour,
-	})
+	}
+
+	for _, o := range allowedOrigins {
+		if o == "*" {
+			cfg.AllowAllOrigins = true
+			return cors.New(cfg)
+		}
+	}
+
+	cfg.AllowOriginFunc = func(origin string) bool {
+		for _, allowed := range allowedOrigins {
+			if origin == allowed {
+				return true
+			}
+		}
+		// Allow any port on localhost / 127.0.0.1 for local Flutter development
+		return strings.HasPrefix(origin, "http://localhost:") ||
+			strings.HasPrefix(origin, "http://127.0.0.1:") ||
+			strings.HasPrefix(origin, "https://localhost:") ||
+			strings.HasPrefix(origin, "https://127.0.0.1:") ||
+			origin == "http://localhost" ||
+			origin == "http://127.0.0.1"
+	}
+
+	return cors.New(cfg)
 }
 
 // SessionChecker confirms a token's user is still allowed in (active account,

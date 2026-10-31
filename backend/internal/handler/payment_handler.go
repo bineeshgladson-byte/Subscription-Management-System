@@ -1,96 +1,101 @@
 package handler
 
 import (
-	"fmt"
-	"time"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/shopspring/decimal"
 
-	"github.com/brightloop/subscriptions/backend/internal/apperr"
 	"github.com/brightloop/subscriptions/backend/internal/dto"
-	"github.com/brightloop/subscriptions/backend/internal/middleware"
+	"github.com/brightloop/subscriptions/backend/internal/repository"
 	"github.com/brightloop/subscriptions/backend/internal/service"
+	"github.com/brightloop/subscriptions/backend/pkg/pagination"
 	"github.com/brightloop/subscriptions/backend/pkg/response"
 )
 
 type PaymentHandler struct {
-	svc *service.PaymentService
+	svc    *service.PaymentService
+	invSvc *service.InvoiceService
 }
 
-func NewPaymentHandler(svc *service.PaymentService) *PaymentHandler {
-	return &PaymentHandler{svc: svc}
+func NewPaymentHandler(svc *service.PaymentService, invSvc *service.InvoiceService) *PaymentHandler {
+	return &PaymentHandler{svc: svc, invSvc: invSvc}
 }
 
-// POST /invoices/:id/payments
-func (h *PaymentHandler) RecordPayment(c *gin.Context) {
-	var req dto.RecordPaymentRequest
-
-	if !bind(c, &req) {
-		return
+func (h *PaymentHandler) List(c *gin.Context) {
+	p := pagination.Parse(c, "id DESC", "id", "created_at", "amount", "payment_date")
+	f := repository.PaymentFilter{
+		Search: c.Query("q"),
+	}
+	if invIDStr := c.Query("invoice_id"); invIDStr != "" {
+		if iid, err := strconv.ParseInt(invIDStr, 10, 64); err == nil && iid > 0 {
+			f.InvoiceID = &iid
+		}
+	}
+	if custIDStr := c.Query("customer_id"); custIDStr != "" {
+		if cid, err := strconv.ParseInt(custIDStr, 10, 64); err == nil && cid > 0 {
+			f.CustomerID = &cid
+		}
 	}
 
-	var invoiceID int64
-	if _, err := fmt.Sscan(c.Param("id"), &invoiceID); err != nil || invoiceID <= 0 {
-		response.Error(c, apperr.Validation(
-			"Invalid invoice ID.",
-			map[string]string{"id": "Invalid invoice ID"},
-		))
-		return
-	}
-
-	payment, invoice, err := h.svc.RecordPayment(
-		c.Request.Context(),
-		invoiceID,
-		req,
-		c.GetHeader("Idempotency-Key"),
-		middleware.CurrentUserID(c),
-	)
+	payments, total, err := h.svc.List(f, p)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
 
-	amountDue := invoice.Total.Sub(invoice.AmountPaid)
-
-	paymentState := paymentStatus(invoice.AmountPaid, amountDue)
-
-	response.Created(c, gin.H{
-		"payment": gin.H{
-			"id":             payment.ID,
-			"payment_number": payment.PaymentNumber,
-			"invoice_id":     payment.InvoiceID,
-			"method":         payment.Method,
-			"amount":         payment.Amount.StringFixed(2),
-			"payment_date":   payment.PaymentDate.Format("2006-01-02"),
-			"status":         payment.Status,
-		},
-		"invoice": gin.H{
-			"id":             invoice.ID,
-			"invoice_number": invoice.InvoiceNumber,
-			"customer": gin.H{
-				"id":   invoice.CustomerID,
-				"name": invoice.CustomerName,
-			},
-			"invoice_date":   invoice.InvoiceDate.Format("2006-01-02"),
-			"due_date":       invoice.DueDate.Format("2006-01-02"),
-			"total":          invoice.Total.StringFixed(2),
-			"amount_paid":    invoice.AmountPaid.StringFixed(2),
-			"amount_due":     amountDue.StringFixed(2),
-			"status":         invoice.Status,
-			"payment_status": paymentState,
-			"is_overdue": amountDue.GreaterThan(decimal.Zero) &&
-				invoice.DueDate.Before(time.Now()),
-		},
-	})
+	out := make([]dto.PaymentResponse, len(payments))
+	for i := range payments {
+		invNum := ""
+		custName := ""
+		if h.invSvc != nil {
+			if inv, _ := h.invSvc.FindByID(payments[i].InvoiceID); inv != nil {
+				invNum = inv.InvoiceNumber
+				custName = inv.CustomerName
+			}
+		}
+		out[i] = *dto.NewPaymentResponse(&payments[i], invNum, custName)
+	}
+	response.List(c, out, p.Meta(total))
 }
 
-func paymentStatus(paid, due decimal.Decimal) string {
-	if paid.IsZero() {
-		return "unpaid"
+func (h *PaymentHandler) Get(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
 	}
-	if due.IsZero() {
-		return "paid"
+	p, err := h.svc.FindByID(id)
+	if err != nil {
+		response.Error(c, err)
+		return
 	}
-	return "partial"
+	invNum := ""
+	custName := ""
+	if h.invSvc != nil {
+		if inv, _ := h.invSvc.FindByID(p.InvoiceID); inv != nil {
+			invNum = inv.InvoiceNumber
+			custName = inv.CustomerName
+		}
+	}
+	response.OK(c, dto.NewPaymentResponse(p, invNum, custName))
+}
+
+func (h *PaymentHandler) Refund(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	p, err := h.svc.RefundPayment(c.Request.Context(), id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	invNum := ""
+	custName := ""
+	if h.invSvc != nil {
+		if inv, _ := h.invSvc.FindByID(p.InvoiceID); inv != nil {
+			invNum = inv.InvoiceNumber
+			custName = inv.CustomerName
+		}
+	}
+	response.OK(c, dto.NewPaymentResponse(p, invNum, custName))
 }

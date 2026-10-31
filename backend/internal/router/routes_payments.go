@@ -2,7 +2,9 @@ package router
 
 import "github.com/gin-gonic/gin"
 
-// A10 payments list (recording lives in routes_invoices.go).
 func registerPaymentRoutes(rg *gin.RouterGroup, d Deps) {
-	rg.GET("/payments", adminOrStaff, d.Sales.ListPayments)
+	g := rg.Group("/payments")
+	g.GET("", adminOrStaff, d.Payments.List)
+	g.GET("/:id", adminOrStaff, d.Payments.Get)
+	g.POST("/:id/refund", adminOnly, d.Payments.Refund)
 }

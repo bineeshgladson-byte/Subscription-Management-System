@@ -467,11 +467,10 @@ class _ApiFormDialogState<T> extends State<_ApiFormDialog<T>> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        _busy = false;
         _message = errorText(e);
         _errors = e is ApiException ? e.details : {};
       });
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 

@@ -2,14 +2,14 @@ package router
 
 import "github.com/gin-gonic/gin"
 
-// A8 subscription lifecycle.
 func registerSubscriptionRoutes(rg *gin.RouterGroup, d Deps) {
 	g := rg.Group("/subscriptions", adminOrStaff)
-	g.GET("", d.Sales.ListSubscriptions)
-	g.GET("/:id", d.Sales.GetSubscription)
-	g.POST("/:id/pause", d.Sales.Pause)
-	g.POST("/:id/resume", d.Sales.Resume)
-	g.POST("/:id/close", d.Sales.Close)
-	g.POST("/:id/renew", d.Sales.Renew)
-	g.POST("/:id/bill-now", d.Sales.BillNow)
+	g.GET("", d.Subscriptions.List)
+	g.GET("/:id", d.Subscriptions.Get)
+	g.POST("/:id/activate", d.Subscriptions.Activate)
+	g.POST("/:id/pause", d.Subscriptions.Pause)
+	g.POST("/:id/resume", d.Subscriptions.Resume)
+	g.POST("/:id/close", d.Subscriptions.Close)
+	g.POST("/:id/renew", d.Subscriptions.Renew)
+	g.POST("/:id/bill-now", d.Subscriptions.BillNow)
 }
