@@ -409,17 +409,27 @@ Future<T?> showApiForm<T>(
   required Future<T> Function() onSave,
   String saveLabel = 'Save',
   double width = 520,
-}) => showDialog<T>(
-  context: context,
-  barrierDismissible: false,
-  builder: (_) => _ApiFormDialog<T>(
-    title: title,
-    fields: fields,
-    onSave: onSave,
-    saveLabel: saveLabel,
-    width: width,
-  ),
-);
+}) async {
+  ModalRoute<T>? dialogRoute;
+  final result = await showDialog<T>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) {
+      dialogRoute = ModalRoute.of<T>(context);
+      return _ApiFormDialog<T>(
+        title: title,
+        fields: fields,
+        onSave: onSave,
+        saveLabel: saveLabel,
+        width: width,
+      );
+    },
+  );
+  // A pop resolves showDialog before its exit animation removes the fields.
+  // Callers may dispose their controllers as soon as this helper returns.
+  await dialogRoute?.completed;
+  return result;
+}
 
 class _ApiFormDialog<T> extends StatefulWidget {
   const _ApiFormDialog({

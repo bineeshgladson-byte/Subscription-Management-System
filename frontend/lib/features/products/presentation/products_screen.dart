@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/models/role.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/ui_kit.dart';
 import '../../auth/application/auth_controller.dart';
+import '../../plans/data/plans_api.dart';
 import '../../taxes/data/taxes_api.dart';
 import '../data/products_api.dart';
 
@@ -120,6 +122,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   }
 
   void _refresh() {
+    ref.invalidate(plansProvider);
+    ref.invalidate(productPlansProvider);
+    ref.invalidate(activePlansProvider);
     ref.invalidate(productsProvider);
     ref.invalidate(productDetailProvider);
     ref.invalidate(activeProductsProvider);
@@ -408,6 +413,20 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
           ),
         ),
         actions: [
+          TextButton.icon(
+            onPressed: () {
+              final name = ref.read(productDetailProvider(id)).value?.name;
+              Navigator.pop(dialogContext);
+              this.context.go(
+                Uri(
+                  path: '/plans',
+                  queryParameters: {'product_id': '$id', 'product_name': ?name},
+                ).toString(),
+              );
+            },
+            icon: const Icon(Icons.layers_outlined, size: 18),
+            label: const Text('View plans'),
+          ),
           if (isAdmin)
             Consumer(
               builder: (context, ref, _) {

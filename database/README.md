@@ -1,7 +1,8 @@
 # Database
 
 - `migrations/` — schema, applied by the `migrate` service on `make up` (golang-migrate).
-- `seeds/` — demo data, loaded with `make seed` (safe to run repeatedly).
+- `seeds/` — optional SQL scripts, loaded with `make seed`.
+   Current default seed script is intentionally empty (no demo/fake data).
 
 ## Rules
 
@@ -24,3 +25,5 @@ make reset           # DANGER: drop all data and recreate
 
 The first admin user is created by the API at startup from `SEED_ADMIN_EMAIL` /
 `SEED_ADMIN_PASSWORD`, because the password must be bcrypt-hashed.
+
+`20261101000700_email_notifications` stores customer email events alongside successful business actions. Unique event keys deduplicate reminders; pending rows retain retry times and delivery errors. Apply this migration before starting an API build with automatic notifications. Its down migration removes the queue and its delivery history.

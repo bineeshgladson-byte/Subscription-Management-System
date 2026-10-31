@@ -19,10 +19,11 @@ type Scheduler struct {
 	cron    *cron.Cron
 	clock   clock.Clock
 	billing BillingFunc
+	emails  func(context.Context)
 }
 
-func NewScheduler(clk clock.Clock, billing BillingFunc) *Scheduler {
-	return &Scheduler{cron: cron.New(cron.WithLocation(clk.Now().Location())), clock: clk, billing: billing}
+func NewScheduler(clk clock.Clock, billing BillingFunc, emails func(context.Context)) *Scheduler {
+	return &Scheduler{cron: cron.New(cron.WithLocation(clk.Now().Location())), clock: clk, billing: billing, emails: emails}
 }
 
 // Start registers jobs. billingSpec comes from BILLING_CRON (e.g. "@every 1h").
@@ -32,6 +33,9 @@ func (s *Scheduler) Start(billingSpec string) error {
 	}
 	// Daily lifecycle job: activate confirmed subs, expire quotations, close expired subs.
 	if _, err := s.cron.AddFunc("15 0 * * *", s.runLifecycle); err != nil {
+		return err
+	}
+	if _, err := s.cron.AddFunc("@every 1m", s.runEmails); err != nil {
 		return err
 	}
 	s.cron.Start()
@@ -60,3 +64,12 @@ func (s *Scheduler) runBilling() {
 
 // runLifecycle: the billing pass already activates and closes; run it daily too.
 func (s *Scheduler) runLifecycle() { s.runBilling() }
+
+func (s *Scheduler) runEmails() {
+	if s.emails == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	s.emails(ctx)
+}

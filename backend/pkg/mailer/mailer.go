@@ -4,6 +4,7 @@ package mailer
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"mime"
 	"net"
@@ -53,7 +54,54 @@ func (m *SMTP) Send(ctx context.Context, msg Message) error {
 	b.WriteString(strings.ReplaceAll(msg.Body, "\n", "\r\n"))
 
 	addr := net.JoinHostPort(m.host, strconv.Itoa(m.port))
-	return smtp.SendMail(addr, auth, m.from, []string{to}, []byte(b.String()))
+	conn, err := (&net.Dialer{Timeout: 15 * time.Second}).DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	deadline := time.Now().Add(30 * time.Second)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		return err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	client, err := smtp.NewClient(conn, m.host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(&tls.Config{ServerName: m.host, MinVersion: tls.VersionTLS12}); err != nil {
+			return err
+		}
+	}
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err := client.Mail(m.from); err != nil {
+		return err
+	}
+	if err := client.Rcpt(to); err != nil {
+		return err
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := writer.Write([]byte(b.String())); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	// DATA was accepted: failure to close the connection is not a failed send.
+	_ = client.Quit()
+	return nil
 }
 
 // clean strips CR/LF so user input can't inject extra email headers.

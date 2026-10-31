@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -41,11 +42,15 @@ import (
 type fakeMailer struct {
 	mu   sync.Mutex
 	sent []mailer.Message
+	fail bool
 }
 
 func (f *fakeMailer) Send(_ context.Context, m mailer.Message) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.fail {
+		return errors.New("temporary SMTP failure")
+	}
 	f.sent = append(f.sent, m)
 	return nil
 }
@@ -91,6 +96,7 @@ type env struct {
 	engine *gin.Engine
 	mail   *fakeMailer
 	auth   *service.AuthService
+	sales  *service.SalesService
 	users  *repository.UserRepo
 	hasher *hash.Hasher
 	suffix string // makes emails unique per test run
@@ -131,7 +137,7 @@ func setup(t *testing.T) *env {
 	discountSvc := service.NewDiscountService(db, discountRepo, productRepo, clk)
 	pricingSvc := service.NewPricingService(db, productRepo, discountRepo, clk)
 	salesSvc := service.NewSalesService(db, productRepo, discountRepo, clk, mail, true)
-	paymentSvc := service.NewPaymentService(db, repository.NewPaymentRepo(), repository.NewInvoiceRepo())
+	paymentSvc := service.NewPaymentService(db, repository.NewPaymentRepo(), repository.NewInvoiceRepo(), mail)
 
 	engine := router.New(router.Deps{
 		Config:   config.Config{AppEnv: "test"},
@@ -150,7 +156,7 @@ func setup(t *testing.T) *env {
 		Sales:     handler.NewSalesHandler(salesSvc, config.Config{AppEnv: "development"}, clk),
 		Payment:   handler.NewPaymentHandler(paymentSvc),
 	})
-	return &env{t: t, db: db, engine: engine, mail: mail, auth: authSvc, users: users, hasher: hasher,
+	return &env{t: t, db: db, engine: engine, mail: mail, auth: authSvc, sales: salesSvc, users: users, hasher: hasher,
 		suffix: fmt.Sprintf("%d", time.Now().UnixNano())}
 }
 

@@ -40,7 +40,7 @@ func NewPlanService(db *gorm.DB, plans *repository.PlanRepo, products *repositor
 func (s *PlanService) List(ctx context.Context, role models.Role, f repository.PlanFilter, p pagination.Params) ([]dto.PlanResponse, int64, error) {
 	if role == models.RoleCustomer {
 		today := s.clock.Today()
-		f = repository.PlanFilter{Search: f.Search, BillingPeriod: f.BillingPeriod, Status: "active", AvailableOn: &today}
+		f = repository.PlanFilter{ProductID: f.ProductID, Search: f.Search, BillingPeriod: f.BillingPeriod, Status: "active", AvailableOn: &today}
 	}
 	db := s.db.WithContext(ctx)
 	list, total, err := s.plans.List(db, f, p)
