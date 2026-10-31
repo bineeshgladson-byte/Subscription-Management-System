@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/brand_mark.dart';
+
 /// Centered card layout shared by login / register / forgot password.
 class AuthCard extends StatelessWidget {
   const AuthCard({super.key, required this.title, required this.child});
@@ -20,6 +22,8 @@ class AuthCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    const BrandMark(),
+                    const SizedBox(height: 24),
                     Text(
                       title,
                       style: Theme.of(context).textTheme.headlineSmall,

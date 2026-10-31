@@ -7,13 +7,19 @@ import (
 	"unicode"
 )
 
-const MinPasswordLength = 9 // brief: "more than 8 characters"
+const (
+	MinPasswordLength = 9  // brief: "more than 8 characters"
+	MaxPasswordBytes  = 72 // bcrypt's limit
+)
 
 // Password returns "" if the password is acceptable, otherwise a human-readable reason.
 // Go's regexp package has no look-ahead, so we check characters in a loop.
 func Password(p string) string {
 	if len([]rune(p)) < MinPasswordLength {
 		return "must be at least 9 characters"
+	}
+	if len(p) > MaxPasswordBytes {
+		return "must be at most 72 bytes"
 	}
 	var upper, lower, special bool
 	for _, r := range p {

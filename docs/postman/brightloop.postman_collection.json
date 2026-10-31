@@ -4,36 +4,288 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "description": "Run 'Login as admin' first; it saves the token to {{token}}. Import docs/postman/local.postman_environment.json too."
   },
-  "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
   "item": [
     {
       "name": "Health",
-      "request": { "method": "GET", "url": "{{baseUrl}}/health", "auth": { "type": "noauth" } }
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health",
+        "auth": {
+          "type": "noauth"
+        }
+      }
     },
     {
       "name": "Auth",
       "item": [
         {
           "name": "Login as admin",
-          "event": [{ "listen": "test", "script": { "exec": [
-            "pm.test('200', () => pm.response.to.have.status(200));",
-            "pm.environment.set('token', pm.response.json().data.access_token);"
-          ] } }],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('token', pm.response.json().data.access_token);"
+                ]
+              }
+            }
+          ],
           "request": {
-            "method": "POST", "url": "{{baseUrl}}/auth/login", "auth": { "type": "noauth" },
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" }
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            }
           }
         },
         {
           "name": "Register customer",
           "request": {
-            "method": "POST", "url": "{{baseUrl}}/auth/register", "auth": { "type": "noauth" },
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"full_name\": \"Rahul Sharma\",\n  \"email\": \"rahul+{{$timestamp}}@example.in\",\n  \"password\": \"Brightloop#2026\"\n}" }
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/register",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Rahul Sharma\",\n  \"email\": \"rahul+{{$timestamp}}@example.in\",\n  \"password\": \"Brightloop#2026\"\n}"
+            }
           }
         },
-        { "name": "Me", "request": { "method": "GET", "url": "{{baseUrl}}/auth/me" } }
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me"
+          }
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/auth/me",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Rahul Sharma\",\n  \"company_name\": \"Acme Pvt Ltd\",\n  \"gstin\": \"29ABCDE1234F1Z5\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/change-password",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{adminPassword}}\",\n  \"new_password\": \"Changed#2026\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('token', pm.response.json().data.access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forgot password (check Mailpit :8025)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/forgot-password",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Reset password (paste code from email)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/reset-password",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"PASTE_64_CHAR_CODE_FROM_EMAIL\",\n  \"password\": \"NewPass#2026\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Staff (admin only)",
+      "item": [
+        {
+          "name": "List staff",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/staff?q=&is_active=true&page=1&page_size=20&sort=-created_at"
+          }
+        },
+        {
+          "name": "Create staff (invite by email)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/staff",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Priya Nair\",\n  \"email\": \"priya+{{$timestamp}}@brightloop.in\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('staffId', pm.response.json().data.staff.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create staff (with password)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/staff",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Arjun Menon\",\n  \"email\": \"arjun+{{$timestamp}}@brightloop.in\",\n  \"password\": \"Staff#Pass2026\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get staff",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/staff/{{staffId}}"
+          }
+        },
+        {
+          "name": "Update staff",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/staff/{{staffId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Priya N.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Deactivate staff",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/staff/{{staffId}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "Reactivate staff",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/staff/{{staffId}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": true\n}"
+            }
+          }
+        }
       ]
     },
     {
@@ -41,8 +293,23 @@
       "item": [
         {
           "name": "No token -> 401",
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('401', () => pm.response.to.have.status(401));"] } }],
-          "request": { "method": "GET", "url": "{{baseUrl}}/invoices", "auth": { "type": "noauth" } }
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/invoices",
+            "auth": {
+              "type": "noauth"
+            }
+          }
         }
       ]
     }

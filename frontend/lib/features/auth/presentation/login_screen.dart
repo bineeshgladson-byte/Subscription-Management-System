@@ -50,7 +50,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthCard(
-      title: 'Sign in to Brightloop',
+      title: 'Sign in to Subly',
       child: Form(
         key: _form,
         child: Column(
