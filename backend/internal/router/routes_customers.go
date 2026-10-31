@@ -2,12 +2,12 @@ package router
 
 import "github.com/gin-gonic/gin"
 
-// Owner: Backend 1 — customers
+// Owner: Ashlin — A1 customers ("a small internal team handles customers day to day")
 func registerCustomerRoutes(rg *gin.RouterGroup, d Deps) {
 	g := rg.Group("/customers")
-	g.GET("", adminOrStaff, todo("list customers"))
-	g.POST("", adminOrStaff, todo("create customer"))
-	g.GET("/:id", adminOrStaff, todo("get customer"))
-	g.PUT("/:id", adminOrStaff, todo("update customer"))
-	g.DELETE("/:id", adminOnly, todo("archive customer"))
+	g.GET("", adminOrStaff, d.Customers.List)
+	g.POST("", adminOrStaff, d.Customers.Create)
+	g.GET("/:id", adminOrStaff, d.Customers.Get)
+	g.PUT("/:id", adminOrStaff, d.Customers.Update)
+	g.DELETE("/:id", adminOnly, d.Customers.Archive)
 }

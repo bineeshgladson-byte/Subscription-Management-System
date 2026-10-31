@@ -12,6 +12,7 @@ import '../../features/discounts/presentation/discounts_screen.dart';
 import '../../features/invoices/presentation/invoices_screen.dart';
 import '../../features/payments/presentation/payments_screen.dart';
 import '../../features/plans/presentation/plans_screen.dart';
+import '../../features/pricing/presentation/pricing_screen.dart';
 import '../../features/products/presentation/products_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/quotations/presentation/quotations_screen.dart';
@@ -19,6 +20,8 @@ import '../../features/reports/presentation/reports_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/staff/presentation/staff_screen.dart';
 import '../../features/subscriptions/presentation/subscriptions_screen.dart';
+import '../../features/taxes/presentation/taxes_screen.dart';
+import '../../features/templates/presentation/templates_screen.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/simple_screens.dart';
 import 'nav_items.dart';
@@ -71,7 +74,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(path: '/staff', builder: (_, _) => const StaffScreen()),
           GoRoute(path: '/products', builder: (_, _) => const ProductsScreen()),
+          GoRoute(path: '/taxes', builder: (_, _) => const TaxesScreen()),
           GoRoute(path: '/plans', builder: (_, _) => const PlansScreen()),
+          GoRoute(
+            path: '/templates',
+            builder: (_, _) => const TemplatesScreen(),
+          ),
+          GoRoute(path: '/pricing', builder: (_, _) => const PricingScreen()),
           GoRoute(
             path: '/quotations',
             builder: (_, _) => const QuotationsScreen(),

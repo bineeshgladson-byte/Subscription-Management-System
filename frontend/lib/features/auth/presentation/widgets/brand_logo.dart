@@ -27,10 +27,7 @@ class BrandLogo extends StatelessWidget {
           height: size * 0.58,
           child: SvgPicture.asset(
             'assets/logo_mark.svg',
-            colorFilter: ColorFilter.mode(
-              fgColor,
-              BlendMode.srcIn,
-            ),
+            colorFilter: ColorFilter.mode(fgColor, BlendMode.srcIn),
           ),
         ),
         if (showWordmark) ...[

@@ -16,10 +16,7 @@ enum AuthMode { signIn, signUp }
 /// Interactive split-screen authentication screen with a smoothly sliding
 /// pitch-black overlay container and dynamic spinning & scaling logo animations.
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({
-    super.key,
-    this.initialMode = AuthMode.signIn,
-  });
+  const LoginScreen({super.key, this.initialMode = AuthMode.signIn});
 
   final AuthMode initialMode;
 
@@ -113,7 +110,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'An unexpected error occurred. Please try again.');
+      setState(
+        () => _error = 'An unexpected error occurred. Please try again.',
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -127,7 +126,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       _error = null;
     });
     try {
-      await ref.read(authRepositoryProvider).register(
+      await ref
+          .read(authRepositoryProvider)
+          .register(
             fullName: _regName.text.trim(),
             email: _regEmail.text.trim(),
             password: _regPassword.text,
@@ -215,12 +216,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   final leftPos = progress * halfWidth;
 
                   // Dynamic logo transformations
-                  final rotationAngle = progress * 2 * math.pi; // 360 degree spin
-                  final scaleMultiplier = 1.0 + 0.22 * math.sin(progress * math.pi); // 1.0 -> 1.22 -> 1.0
+                  final rotationAngle =
+                      progress * 2 * math.pi; // 360 degree spin
+                  final scaleMultiplier =
+                      1.0 +
+                      0.22 * math.sin(progress * math.pi); // 1.0 -> 1.22 -> 1.0
 
                   // Smooth text crossfade at mid-point
                   final isRightSide = progress >= 0.5;
-                  final midProximity = (1.0 - 2.5 * (progress - 0.5).abs()).clamp(0.0, 1.0);
+                  final midProximity = (1.0 - 2.5 * (progress - 0.5).abs())
+                      .clamp(0.0, 1.0);
                   final textOpacity = (1.0 - midProximity).clamp(0.0, 1.0);
 
                   return Positioned(
@@ -236,10 +241,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             color: Colors.black.withValues(alpha: 0.35),
                             blurRadius: 32,
                             spreadRadius: 6,
-                            offset: Offset(
-                              progress < 0.5 ? 6 : -6,
-                              0,
-                            ),
+                            offset: Offset(progress < 0.5 ? 6 : -6, 0),
                           ),
                         ],
                       ),
@@ -327,7 +329,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                             ? "Don't have an account?"
                                             : 'Already have an account?',
                                         style: TextStyle(
-                                          color: Colors.white.withValues(alpha: 0.75),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.75,
+                                          ),
                                           fontSize: 14,
                                           fontWeight: FontWeight.w400,
                                         ),
@@ -342,13 +346,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                             vertical: 8,
                                           ),
                                           child: Text(
-                                            !isRightSide ? 'Register' : 'Sign In',
+                                            !isRightSide
+                                                ? 'Register'
+                                                : 'Sign In',
                                             style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 18,
                                               fontWeight: FontWeight.w700,
                                               letterSpacing: 0.3,
-                                              decoration: TextDecoration.underline,
+                                              decoration:
+                                                  TextDecoration.underline,
                                               decorationColor: Colors.white,
                                               decorationThickness: 1.5,
                                             ),
@@ -392,11 +399,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         const SizedBox(height: 8),
         const Text(
           'Welcome back. Enter your credentials to access your account.',
-          style: TextStyle(
-            fontSize: 14,
-            color: Color(0xFF71717A),
-            height: 1.4,
-          ),
+          style: TextStyle(fontSize: 14, color: Color(0xFF71717A), height: 1.4),
         ),
         const SizedBox(height: 24),
 
@@ -476,8 +479,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       ),
                       const SizedBox(width: 8),
                       GestureDetector(
-                        onTap: () =>
-                            setState(() => _rememberMe = !_rememberMe),
+                        onTap: () => setState(() => _rememberMe = !_rememberMe),
                         child: const Text(
                           'Remember me',
                           style: TextStyle(
@@ -545,11 +547,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         const SizedBox(height: 8),
         const Text(
           'Create a new account to start managing subscriptions.',
-          style: TextStyle(
-            fontSize: 14,
-            color: Color(0xFF71717A),
-            height: 1.4,
-          ),
+          style: TextStyle(fontSize: 14, color: Color(0xFF71717A), height: 1.4),
         ),
         const SizedBox(height: 24),
 
@@ -633,8 +631,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       size: 18,
                       color: const Color(0xFF71717A),
                     ),
-                    onPressed: () =>
-                        setState(() => _regObscure = !_regObscure),
+                    onPressed: () => setState(() => _regObscure = !_regObscure),
                   ),
                 ),
                 validator: (v) {
@@ -677,13 +674,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           child: Column(
             children: [
               if (_busy)
-                const Center(
-                  child: LogoVideoLoader(width: 140, height: 80),
-                )
+                const Center(child: LogoVideoLoader(width: 140, height: 80))
               else
-                const Center(
-                  child: BrandLogo(size: 38, isLight: false),
-                ),
+                const Center(child: BrandLogo(size: 38, isLight: false)),
               const SizedBox(height: 28),
               if (_mode == AuthMode.signIn)
                 _buildSignInFormContent()

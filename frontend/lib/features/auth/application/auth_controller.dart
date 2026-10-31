@@ -39,6 +39,15 @@ class AuthController extends AsyncNotifier<AuthUser?> {
     state = const AsyncData(null);
   }
 
+  /// Reloads the signed-in user (e.g. after editing the profile).
+  Future<void> refreshUser() async {
+    state = AsyncData(await ref.read(authRepositoryProvider).me());
+  }
+
+  /// Stores a new token (change-password returns one; old ones stop working).
+  Future<void> replaceToken(String token) =>
+      ref.read(tokenStorageProvider).write(token);
+
   /// Called by the Dio interceptor on any 401.
   void sessionExpired() {
     if (state.value != null) unawaited(logout());

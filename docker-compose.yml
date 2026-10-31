@@ -52,6 +52,30 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Hot-reload API for development (make dev). Same port as `api`, so only one
+  # of the two runs at a time; the Makefile switches between them.
+  api-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    image: brightloop-api-dev
+    env_file: .env
+    environment:
+      API_PORT: "8080"
+    ports:
+      - "${API_PORT:-8080}:8080"
+    volumes:
+      - ./backend:/src           # your code, live
+      - /src/tmp                 # build output stays inside the container
+      - gomod:/go/pkg/mod        # downloaded modules survive restarts
+      - gocache:/root/.cache/go-build
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    profiles: ["dev"]
+
   mailpit:
     image: axllent/mailpit:v1.21
     ports:
@@ -79,3 +103,5 @@ services:
 
 volumes:
   pgdata:
+  gomod:
+  gocache:
