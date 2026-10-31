@@ -2,7 +2,7 @@
 
 > **For any AI or developer picking this up:** read this whole file before touching code.
 > It is updated after **every** completed step. The newest entry in the step log (section 7) is at the top.
-> Last updated: **2026-10-31**, after **A2 Taxes** and the architecture diagrams.
+> Last updated: **2026-10-31**, after the **browser-fit workspace adjustment**.
 
 ---
 
@@ -10,11 +10,11 @@
 
 | | |
 |---|---|
-| **Current step** | A2 Taxes ✅ done. **Next: A3 Products and variants** (spec in section 8). |
+| **Current step** | Reference UI ✅ implemented. Backend next: finish **A3 Products and variants**, then A4 Plans (existing untracked backend work is in progress; inspect before editing). |
 | **Branch** | `ashlin_dev` (Ashlin's backend branch). `main` is the team integration branch. |
-| **Uncommitted work** | A1 Customers + A2 Taxes + this file are **not committed yet**. Ashlin commits by hand; see rule R1. Check with `git status`. |
+| **Uncommitted work** | Frontend reference UI + this handoff; pre-existing A3/A4 backend files, migrations and seed edit belong to ongoing backend work and were left untouched. A1/A2 are now in HEAD (`dcfc5af`). Ashlin commits by hand; see R1 and `git status`. |
 | **Is it running?** | `make dev` = backend (hot reload) + Flutter. Health: `curl localhost:8080/health` |
-| **Test before you claim done** | `make be-test` (unit) and `make be-itest` (integration, needs the DB up) |
+| **Test before you claim done** | Backend: `make be-test` + `make be-itest`. Frontend: `cd frontend && flutter analyze && flutter test && flutter build web`. |
 
 ---
 
@@ -139,8 +139,9 @@ docs/api/openapi.yaml        THE API contract (validated with openapi-spec-valid
 | Staff (admin) | ✅ merged | `/staff` list/create/get/update, `PATCH /staff/:id/status` | invite email if no password |
 | Email + branding | ✅ merged | `make test-email` | Gmail SMTP works; `EMAIL_SHOW_CODES` dev-only codes |
 | `make dev` (Air in Docker) | ✅ merged | — | `backend/.air.toml`, `Dockerfile.dev`, service `api-dev` (profile dev) |
-| **A1 Customers** | ✅ built, **uncommitted** | `/customers` list/create/get(+stats)/update, DELETE = archive (admin) | sign-up links to an existing customer by email; archive blocked by open items |
-| **A2 Taxes** | ✅ built, **uncommitted** | `/taxes` list/get/create/update, DELETE = deactivate (admin) | rate string 0–100, 2 dp; `TAX_IN_USE` guard |
+| **A1 Customers** | ✅ committed | `/customers` list/create/get(+stats)/update, DELETE = archive (admin) | sign-up links to an existing customer by email; archive blocked by open items |
+| **A2 Taxes** | ✅ committed | `/taxes` list/get/create/update, DELETE = deactivate (admin) | rate string 0–100, 2 dp; `TAX_IN_USE` guard |
+| Reference Flutter UI | ✅ built, **uncommitted** | shared workspace, `/plans`, `/dashboard` | User explicitly authorized frontend edits; sample data, not connected to backend yet |
 | A3 Products + variants | ⏭ next | `/products`, `/products/:id/variants` | spec in section 8 |
 | A4 Plans · A5 Templates · A6 Discounts + pricing | ⏳ planned (Ashlin) | | see the plan PDF |
 | A7 Quotations · A8 Subscriptions | 🟡 Bineesh | | his branch has a subscription repo/service/handler |
@@ -176,6 +177,24 @@ billing dates, tax rate parsing). Postman: 92 requests / 12 folders in `~/Docume
 ---
 
 ## 7. Step log (newest first)
+
+### 2026-10-31 · Browser-fit workspace ✅ (uncommitted)
+- User requested removal of the large outer margins visible in the browser.
+- `frontend/lib/core/widgets/app_shell.dart`: removed desktop horizontal/vertical frame padding; the sidebar and content now fill the viewport. Content keeps rounded left corners beside the sidebar, with square right corners at the browser edge. Removing the frame also gives the navigation more vertical room.
+- Validation: Flutter analysis clean, all 8 workspace widget tests pass (desktop, mobile, tablet, landscape and large text). Hot reload requested for the running dev app.
+- Next backend steps remain A3/A4; no backend changes in this adjustment.
+
+### 2026-10-31 · Reference UI implementation ✅ (uncommitted)
+- User explicitly asked to copy the supplied pricing dashboard into the Flutter project; frontend edits are authorized for this task.
+- `frontend/lib/core/widgets/app_shell.dart`: light workspace regardless of OS dark mode, lavender sidebar, pill selection, rounded white panel, searchable role-filtered navigation, account menu/log out, notification dialog, mobile drawer. Original role guards remain.
+- New `core/theme/workspace_theme.dart`, `core/widgets/workspace_widgets.dart`: shared colors, typography, headings, metrics and preview notice. Auth screens retain their existing theme.
+- `features/plans/presentation/plans_screen.dart`: four pricing cards matching the reference (USD preview prices), Professional popular badge/gradient border, feature checks, subscribers, MRR and revenue bars. Admin-only create/edit/archive operate in session only, with validation and archive confirmation; no server writes. Staff cannot see financial totals; customers cannot see company subscriber metrics.
+- `features/dashboard/presentation/dashboard_screen.dart`: overview cards, growth chart, plan breakdown and activity in the same style; sample content is explicitly labeled. Other feature bodies remain existing placeholders inside the updated shell.
+- `frontend/pubspec.yaml` + `assets/fonts/{Poppins-Regular,Poppins-Medium,Poppins-SemiBold}.ttf` + `OFL.txt`: bundled Poppins font and license, no new package dependencies.
+- `frontend/test/workspace_test.dart`: 8 widget tests for desktop/mobile/tablet/landscape, 2x text, role restrictions, plan creation/validation/archive and navigation. Together with existing tests, 14 pass; analyzer clean; release web build passes (Wasm dry run also succeeded).
+- UI captures: `~/Documents/subly-ui-preview/{pricing-desktop,pricing-phone,pricing-tablet,pricing-landscape,overview-desktop,overview-phone}.png`. Regenerate with `SUBLY_UI_CAPTURE="$HOME/Documents/subly-ui-preview" flutter test` from `frontend/`.
+- Browser plugin had no connected browsers; screenshots were generated with Flutter rendering and visually inspected. A hot restart was requested from the existing Flutter dev process on port 5000.
+- Backend APIs for plans/dashboard remain unwired; connect these views to live API data once the backend modules land. Existing untracked backend files/migrations and seed edit were not modified.
 
 ### 2026-10-31 · Architecture / DB diagrams (outside the repo)
 - `~/Documents/subly-diagrams/{01-architecture,02-database-erd,03-business-flow,04-auth-and-lifecycles}.{png,svg}`.

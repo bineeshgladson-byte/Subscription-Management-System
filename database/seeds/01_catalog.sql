@@ -31,7 +31,7 @@ INSERT INTO subscription_plans (name, description, price, billing_period, billin
 VALUES
     ('Starter Monthly', 'One seat, billed monthly', 999.00, 'monthly', 1, 1, '2026-01-01', TRUE, TRUE, TRUE),
     ('Business Yearly', 'Odoo Brand seats, billed yearly', 1559.00, 'yearly', 1, 5, '2026-01-01', FALSE, FALSE, TRUE)
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT ((lower(name))) DO NOTHING;
 
 INSERT INTO plan_products (plan_id, product_id, variant_id, quantity)
 SELECT sp.id, p.id, v.id, 1
