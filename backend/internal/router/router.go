@@ -25,8 +25,10 @@ type Deps struct {
 
 	Sessions middleware.SessionChecker
 
-	Auth  *handler.AuthHandler
-	Staff *handler.StaffHandler
+	Auth      *handler.AuthHandler
+	Staff     *handler.StaffHandler
+	Customers *handler.CustomerHandler
+	Taxes     *handler.TaxHandler
 }
 
 // Role guards, reused by every routes_*.go file.
@@ -61,6 +63,7 @@ func New(d Deps) *gin.Engine {
 	registerAuthRoutes(authed, d)
 	registerStaffRoutes(authed, d)
 	registerCustomerRoutes(authed, d)
+	registerTaxRoutes(authed, d)
 	registerCatalogRoutes(authed, d)
 	registerPlanRoutes(authed, d)
 	registerQuotationRoutes(authed, d)

@@ -12,7 +12,7 @@ info:
     - Lists accept page, page_size (max 100), sort (e.g. -created_at).
     - Roles are listed in each operation's description; the backend enforces them.
 
-    Status: auth + staff are implemented. A few other core endpoints are specified. Every other endpoint
+    Status: auth, staff, customers and taxes are implemented. A few other core endpoints are specified. Every other endpoint
     in the architecture plan is registered in backend/internal/router and returns
     501 until implemented; add its spec here when you start on it.
 servers:
@@ -25,6 +25,8 @@ tags:
   - name: System
   - name: Auth
   - name: Staff
+  - name: Customers
+  - name: Taxes
   - name: Products
   - name: Plans
   - name: Invoices
@@ -365,6 +367,238 @@ paths:
                       data: { $ref: '#/components/schemas/Staff' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /customers:
+    get:
+      tags: [Customers]
+      summary: List customers
+      description: 'Roles: admin, staff. Archived customers are not listed.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - { name: sort, in: query, description: 'created_at | name | email | company_name, prefix - for descending', schema: { type: string, example: -created_at } }
+        - { name: q, in: query, description: 'search name, email, company or phone', schema: { type: string } }
+        - { name: has_login, in: query, description: 'true = has signed up, false = created by staff only', schema: { type: boolean } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Customer' } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Customers]
+      summary: Create a customer
+      description: |
+        Roles: admin, staff. The customer doesn't need a login. If they later sign up with
+        the same email, their login is linked to this record automatically.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Customer' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /customers/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      tags: [Customers]
+      summary: Customer detail with subscription and invoice counts
+      description: 'Roles: admin, staff.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CustomerDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Customers]
+      summary: Edit a customer
+      description: |
+        Roles: admin, staff. Only fields sent are changed; "" clears an optional field.
+        The email can't be changed once the customer has a login (it's their login email).
+        Renaming a customer with a login also renames their login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Customer' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Customers]
+      summary: Archive a customer
+      description: |
+        Roles: admin only. Refused (422, rule CUSTOMER_HAS_OPEN_ITEMS) while the customer has
+        draft/quotation/confirmed/active/paused subscriptions or unpaid invoices. Archiving hides
+        the customer, keeps their invoices and payments, and deactivates their login.
+      responses:
+        '200': { $ref: '#/components/responses/Message' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+
+  /taxes:
+    get:
+      tags: [Taxes]
+      summary: List taxes
+      description: 'Roles: admin, staff. Default sort: name.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - { name: sort, in: query, description: 'name | rate | created_at, prefix - for descending', schema: { type: string } }
+        - { name: q, in: query, description: search by name, schema: { type: string } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Tax' } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Taxes]
+      summary: Create a tax
+      description: 'Roles: admin. Names are unique ignoring case.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, rate]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 60, example: GST 18% }
+                rate: { type: string, description: 'percent, 0-100, max 2 decimals', example: '18.00' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Tax' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /taxes/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      tags: [Taxes]
+      summary: Get a tax
+      description: 'Roles: admin, staff.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Tax' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Taxes]
+      summary: Edit, deactivate or reactivate a tax
+      description: |
+        Roles: admin. Only fields sent are changed. A new rate applies to invoices created from
+        now on; existing invoice lines keep the rate they were issued with. Deactivating
+        (is_active=false) is refused while active products use this tax as their default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                rate: { type: string, example: '12.50' }
+                is_active: { type: boolean }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Tax' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+    delete:
+      tags: [Taxes]
+      summary: Deactivate a tax (never deletes)
+      description: 'Roles: admin. 422 with rule TAX_IN_USE while active products use it as their default tax.'
+      responses:
+        '200':
+          description: Deactivated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Tax' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+
   /products:
     get:
       tags: [Products]
@@ -676,6 +910,57 @@ components:
         access_token: { type: string, example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... }
         expires_at: { type: string, format: date-time }
         user: { $ref: '#/components/schemas/User' }
+
+    CustomerInput:
+      type: object
+      required: [name, email]
+      description: 'POST requires name and email; PUT accepts any subset.'
+      properties:
+        name: { type: string, minLength: 2, maxLength: 150, example: Acme Pvt Ltd }
+        email: { type: string, format: email, example: accounts@acme.in }
+        phone: { type: string, example: '+91 98765 43210', description: '7-15 digits; + spaces - ( ) allowed' }
+        company_name: { type: string, maxLength: 150 }
+        billing_address: { type: string, maxLength: 500 }
+        gstin: { type: string, example: 29ABCDE1234F1Z5, description: 'Indian GSTIN, stored upper-case' }
+
+    Customer:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 18 }
+        name: { type: string, example: Acme Pvt Ltd }
+        email: { type: string, example: accounts@acme.in }
+        phone: { type: string, nullable: true }
+        company_name: { type: string, nullable: true }
+        billing_address: { type: string, nullable: true }
+        gstin: { type: string, nullable: true }
+        has_login: { type: boolean, description: 'true once the customer has signed up' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CustomerDetail:
+      allOf:
+        - $ref: '#/components/schemas/Customer'
+        - type: object
+          properties:
+            stats:
+              type: object
+              properties:
+                active_subscriptions: { type: integer, description: active + paused }
+                total_subscriptions: { type: integer }
+                open_invoices: { type: integer, description: confirmed and not fully paid }
+                overdue_invoices: { type: integer }
+                amount_due: { $ref: '#/components/schemas/Money' }
+
+    Tax:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        name: { type: string, example: GST 18% }
+        rate: { type: string, example: '18.00' }
+        is_active: { type: boolean }
+        products_using: { type: integer, description: active products with this as their default tax }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     Variant:
       type: object

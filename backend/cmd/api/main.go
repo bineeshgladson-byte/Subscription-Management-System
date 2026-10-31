@@ -62,6 +62,8 @@ func run() error {
 		FrontendURL: cfg.FrontendURL, ResetTTL: cfg.ResetTokenTTL, ShowCodesInEmail: cfg.EmailShowCodes,
 	})
 	staffSvc := service.NewStaffService(db, userRepo, hasher, authSvc, cfg.InviteTokenTTL)
+	customerSvc := service.NewCustomerService(db, customerRepo, userRepo, clk)
+	taxSvc := service.NewTaxService(db, repository.NewTaxRepo())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -80,6 +82,9 @@ func run() error {
 		Sessions: authSvc,
 		Auth:     handler.NewAuthHandler(authSvc),
 		Staff:    handler.NewStaffHandler(staffSvc),
+
+		Customers: handler.NewCustomerHandler(customerSvc),
+		Taxes:     handler.NewTaxHandler(taxSvc),
 	})
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
 

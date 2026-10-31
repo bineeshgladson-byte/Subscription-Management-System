@@ -7,7 +7,7 @@ BEGIN;
 INSERT INTO taxes (name, rate) VALUES
     ('GST 18%', 18.00),
     ('GST 0%', 0.00)
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT ((lower(name))) DO NOTHING;
 
 INSERT INTO products (name, product_type, sales_price, cost_price, description, tax_id)
 SELECT 'Software Subscription', 'software', 999.00, 300.00, 'Cloud ERP seat',

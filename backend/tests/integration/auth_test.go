@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"github.com/brightloop/subscriptions/backend/internal/config"
 	"github.com/brightloop/subscriptions/backend/internal/database"
@@ -86,6 +87,7 @@ func (f *fakeMailer) countTo(to string) int {
 
 type env struct {
 	t      *testing.T
+	db     *gorm.DB
 	engine *gin.Engine
 	mail   *fakeMailer
 	auth   *service.AuthService
@@ -119,6 +121,8 @@ func setup(t *testing.T) *env {
 		FrontendURL: "http://localhost:5000", ResetTTL: 30 * time.Minute, ShowCodesInEmail: true,
 	})
 	staffSvc := service.NewStaffService(db, users, hasher, authSvc, 48*time.Hour)
+	customerSvc := service.NewCustomerService(db, repository.NewCustomerRepo(), users, clk)
+	taxSvc := service.NewTaxService(db, repository.NewTaxRepo())
 
 	engine := router.New(router.Deps{
 		Config:   config.Config{AppEnv: "test"},
@@ -127,8 +131,11 @@ func setup(t *testing.T) *env {
 		Sessions: authSvc,
 		Auth:     handler.NewAuthHandler(authSvc),
 		Staff:    handler.NewStaffHandler(staffSvc),
+
+		Customers: handler.NewCustomerHandler(customerSvc),
+		Taxes:     handler.NewTaxHandler(taxSvc),
 	})
-	return &env{t: t, engine: engine, mail: mail, auth: authSvc, users: users, hasher: hasher,
+	return &env{t: t, db: db, engine: engine, mail: mail, auth: authSvc, users: users, hasher: hasher,
 		suffix: fmt.Sprintf("%d", time.Now().UnixNano())}
 }
 
