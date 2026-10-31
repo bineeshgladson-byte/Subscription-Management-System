@@ -69,14 +69,14 @@ type ProductResponse struct {
 	ProductType models.ProductType `json:"product_type"`
 	SalesPrice  string             `json:"sales_price"`
 	// Cost and margin are admin-only (staff get null): they are business-sensitive.
-	CostPrice   *string            `json:"cost_price"`
-	Margin      *string            `json:"margin"`
-	Description *string            `json:"description"`
-	Tax         *TaxSummary        `json:"tax"`
+	CostPrice   *string             `json:"cost_price"`
+	Margin      *string             `json:"margin"`
+	Description *string             `json:"description"`
+	Tax         *TaxSummary         `json:"tax"`
 	Status      models.RecordStatus `json:"status"`
-	Variants    []VariantResponse  `json:"variants"`
-	CreatedAt   time.Time          `json:"created_at"`
-	UpdatedAt   time.Time          `json:"updated_at"`
+	Variants    []VariantResponse   `json:"variants"`
+	CreatedAt   time.Time           `json:"created_at"`
+	UpdatedAt   time.Time           `json:"updated_at"`
 }
 
 func NewVariantResponse(p *models.Product, v *models.ProductVariant) VariantResponse {

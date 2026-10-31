@@ -18,9 +18,7 @@ class AuthCard extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 440),
             child: Column(
               children: [
-                const Center(
-                  child: BrandLogo(size: 38, isLight: false),
-                ),
+                const Center(child: BrandLogo(size: 38, isLight: false)),
                 const SizedBox(height: 28),
                 Card(
                   elevation: 0,
