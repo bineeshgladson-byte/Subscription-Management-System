@@ -57,23 +57,25 @@ func run() error {
   invoiceRepo := repository.NewInvoiceRepo()
   resetTokenRepo := repository.NewResetTokenRepo()
 
-  // Services
-  authSvc := service.NewAuthService(service.AuthDeps{
-      DB:            db,
-      Users:         userRepo,
-      Customers:     customerRepo,
-      ResetTokens:   resetTokenRepo,
-      Hasher:        hasher,
-      JWT:           jwtMgr,
-      Clock:         clk,
-      Mailer:        mail,
-      FrontendURL:   cfg.FrontendURL,
-      ResetTTL:      cfg.ResetTokenTTL,
-      ShowCodesInEmail: cfg.EmailShowCodes,
-   })
+// Services
+authSvc := service.NewAuthService(service.AuthDeps{
+    DB:               db,
+    Users:            userRepo,
+    Customers:        customerRepo,
+    ResetTokens:      resetTokenRepo,
+    Hasher:            hasher,
+    JWT:               jwtMgr,
+    Clock:             clk,
+    Mailer:            mail,
+    FrontendURL:       cfg.FrontendURL,
+    ResetTTL:          cfg.ResetTokenTTL,
+    ShowCodesInEmail:  cfg.EmailShowCodes,
+})
 
-   paymentSvc := service.NewPaymentService(db, paymentRepo, invoiceRepo)
-   staffSvc := service.NewStaffService(db, userRepo, hasher, authSvc, cfg.InviteTokenTTL)
+paymentSvc := service.NewPaymentService(db, paymentRepo, invoiceRepo)
+staffSvc := service.NewStaffService(db, userRepo, hasher, authSvc, cfg.InviteTokenTTL)
+customerSvc := service.NewCustomerService(db, customerRepo, userRepo, clk)
+taxSvc := service.NewTaxService(db, repository.NewTaxRepo())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -86,14 +88,16 @@ func run() error {
 
 	// HTTP
 	engine := router.New(router.Deps{
-    Config:   cfg,
-    DB:       db,
-    JWT:      jwtMgr,
-    Sessions: authSvc,
-    Auth:     handler.NewAuthHandler(authSvc),
-    Staff:    handler.NewStaffHandler(staffSvc),
-    Payment:  handler.NewPaymentHandler(paymentSvc),
-	 })
+    Config:    cfg,
+    DB:        db,
+    JWT:       jwtMgr,
+    Sessions:  authSvc,
+    Auth:      handler.NewAuthHandler(authSvc),
+    Staff:     handler.NewStaffHandler(staffSvc),
+    Customers: handler.NewCustomerHandler(customerSvc),
+    Taxes:     handler.NewTaxHandler(taxSvc),
+    Payment:   handler.NewPaymentHandler(paymentSvc),
+   })
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
 
 	// Background jobs
