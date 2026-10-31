@@ -45,7 +45,15 @@ ON CONFLICT DO NOTHING;
 INSERT INTO quotation_templates (name, plan_id, validity_days, payment_terms_days, terms)
 SELECT 'Standard SME offer', id, 15, 15, 'Prices exclusive of GST. Payment due within 15 days of invoice.'
 FROM subscription_plans WHERE name = 'Starter Monthly'
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT ((lower(name))) DO NOTHING;
+
+-- Template lines default to the plan's products (only if the template has none yet).
+INSERT INTO quotation_template_lines (template_id, product_id, variant_id, quantity)
+SELECT qt.id, pp.product_id, pp.variant_id, pp.quantity
+FROM quotation_templates qt
+JOIN plan_products pp ON pp.plan_id = qt.plan_id
+WHERE qt.name = 'Standard SME offer'
+  AND NOT EXISTS (SELECT 1 FROM quotation_template_lines l WHERE l.template_id = qt.id);
 
 INSERT INTO discounts (name, discount_type, value, scope, min_purchase_amount, starts_on, ends_on, max_usage)
 SELECT '10% off orders over 10,000', 'percentage', 10, 'subscription', 10000.00, '2026-11-01', '2026-12-31', 50

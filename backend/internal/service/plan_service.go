@@ -322,58 +322,19 @@ func (s *PlanService) SetStatus(ctx context.Context, id int64, status models.Rec
 	return s.Get(ctx, models.RoleAdmin, id)
 }
 
-// buildLines validates plan lines against the catalogue: products must be
-// active, variants must belong to their product and be active, no duplicates.
+// buildLines validates plan lines (see resolveLines) and turns them into rows.
 func (s *PlanService) buildLines(db *gorm.DB, in []dto.PlanLineInput) ([]models.PlanProduct, error) {
-	ids := make([]int64, 0, len(in))
-	for _, l := range in {
-		ids = append(ids, l.ProductID)
+	specs := make([]lineSpec, len(in))
+	for i, l := range in {
+		specs[i] = lineSpec{ProductID: l.ProductID, VariantID: l.VariantID, Quantity: l.Quantity, PriceOverride: l.PriceOverride}
 	}
-	products, err := s.products.FindByIDs(db, ids)
+	resolved, err := resolveLines(db, s.products, "products", specs, true)
 	if err != nil {
 		return nil, err
 	}
-	errs := map[string]string{}
-	seen := map[string]bool{}
-	lines := make([]models.PlanProduct, 0, len(in))
-	for i, l := range in {
-		field := fmt.Sprintf("products[%d]", i)
-		p := products[l.ProductID]
-		if p == nil || p.Status != models.StatusActive {
-			errs[field+".product_id"] = "must be an active product"
-			continue
-		}
-		if l.VariantID != nil {
-			var found *models.ProductVariant
-			for j := range p.Variants {
-				if p.Variants[j].ID == *l.VariantID {
-					found = &p.Variants[j]
-				}
-			}
-			if found == nil || !found.IsActive {
-				errs[field+".variant_id"] = "must be an active variant of this product"
-				continue
-			}
-		}
-		key := fmt.Sprintf("%d|%v", l.ProductID, derefOr(l.VariantID, 0))
-		if seen[key] {
-			errs[field] = "this product/variant is already in the plan"
-			continue
-		}
-		seen[key] = true
-		line := models.PlanProduct{ProductID: l.ProductID, VariantID: l.VariantID, Quantity: defaultInt(l.Quantity, 1)}
-		if l.PriceOverride != "" {
-			v, reason := parseMoney(l.PriceOverride, false)
-			if reason != "" {
-				errs[field+".price_override"] = reason
-				continue
-			}
-			line.PriceOverride = &v
-		}
-		lines = append(lines, line)
-	}
-	if len(errs) > 0 {
-		return nil, apperr.Validation("Some plan products are invalid", errs)
+	lines := make([]models.PlanProduct, len(resolved))
+	for i, r := range resolved {
+		lines[i] = models.PlanProduct{ProductID: r.ProductID, VariantID: r.VariantID, Quantity: r.Quantity, PriceOverride: r.PriceOverride}
 	}
 	return lines, nil
 }
