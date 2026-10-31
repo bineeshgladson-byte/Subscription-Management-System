@@ -59,6 +59,10 @@ func number(tx *gorm.DB, seq, prefix string, year int) (string, error) {
 // ======================= quotations =======================
 
 func (s *SalesService) CreateQuotation(ctx context.Context, actorID int64, in dto.CreateQuotationRequest) (*dto.SubscriptionResponse, error) {
+	return s.createQuotation(ctx, actorID, in, true)
+}
+
+func (s *SalesService) createQuotation(ctx context.Context, actorID int64, in dto.CreateQuotationRequest, notify bool) (*dto.SubscriptionResponse, error) {
 	db := s.db.WithContext(ctx)
 	errs := map[string]string{}
 	today := s.today()
@@ -171,10 +175,16 @@ func (s *SalesService) CreateQuotation(ctx context.Context, actorID int64, in dt
 				return err
 			}
 		}
+		if notify {
+			return queueSubscriptionEmail(tx, sub.ID, "Quotation created")
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	if notify {
+		s.kickEmails()
 	}
 	return s.GetSubscription(ctx, sub.ID)
 }
@@ -208,33 +218,37 @@ func (s *SalesService) load(db *gorm.DB, id int64) (*models.Subscription, error)
 }
 
 func (s *SalesService) setStatus(ctx context.Context, id int64, from []models.SubscriptionStatus, fields map[string]any, what string) (*dto.SubscriptionResponse, error) {
-	sub, err := s.load(s.db.WithContext(ctx), id)
+	events := map[string]string{"send": "Quotation sent", "cancel": "Quotation cancelled", "pause": "Subscription paused", "resume": "Subscription resumed", "close": "Subscription closed"}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var sub models.Subscription
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sub, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apperr.NotFound("subscription")
+			}
+			return err
+		}
+		allowed := false
+		for _, status := range from {
+			allowed = allowed || sub.Status == status
+		}
+		if !allowed {
+			return apperr.InvalidState(fmt.Sprintf("can't %s a subscription that is %s", what, sub.Status))
+		}
+		if err := tx.Model(&sub).Updates(fields).Error; err != nil {
+			return err
+		}
+		return queueSubscriptionEmail(tx, id, events[what])
+	})
 	if err != nil {
 		return nil, err
 	}
-	ok := false
-	for _, f := range from {
-		ok = ok || sub.Status == f
-	}
-	if !ok {
-		return nil, apperr.InvalidState(fmt.Sprintf("can't %s a subscription that is %s", what, sub.Status))
-	}
-	if err := s.db.WithContext(ctx).Model(&models.Subscription{}).Where("id = ?", id).Updates(fields).Error; err != nil {
-		return nil, err
-	}
+	s.kickEmails()
 	return s.GetSubscription(ctx, id)
 }
 
-// SendQuotation: draft → quotation (and emails the customer).
+// SendQuotation also supports an explicit resend of an existing quotation.
 func (s *SalesService) SendQuotation(ctx context.Context, id int64) (*dto.SubscriptionResponse, error) {
-	out, err := s.setStatus(ctx, id, []models.SubscriptionStatus{models.SubDraft, models.SubQuotation},
-		map[string]any{"status": models.SubQuotation}, "send")
-	if err == nil {
-		s.notify(out.CustomerID, "Your "+brand.Name+" quotation "+out.QuotationNumber,
-			fmt.Sprintf("Here is your quotation %s for %s: %s per billing period (%s), valid until %s.",
-				out.QuotationNumber, out.PlanName, out.Total, out.BillingLabel, deref(out.QuotationValidUntil)))
-	}
-	return out, err
+	return s.setStatus(ctx, id, []models.SubscriptionStatus{models.SubDraft, models.SubQuotation}, map[string]any{"status": models.SubQuotation}, "send")
 }
 
 func (s *SalesService) CancelQuotation(ctx context.Context, id int64) (*dto.SubscriptionResponse, error) {
@@ -261,12 +275,23 @@ func (s *SalesService) ConfirmQuotation(ctx context.Context, id int64) (*dto.Sub
 		if err != nil {
 			return err
 		}
-		return tx.Model(&models.Subscription{}).Where("id = ?", id).Updates(map[string]any{
-			"status": models.SubConfirmed, "subscription_number": n, "confirmed_at": s.clock.Now()}).Error
+		res := tx.Model(&models.Subscription{}).Where("id = ? AND status IN ('draft','quotation')", id).Updates(map[string]any{
+			"status": models.SubConfirmed, "subscription_number": n, "confirmed_at": s.clock.Now()})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return apperr.InvalidState("quotation has already changed")
+		}
+		if sub.StartDate.After(s.today()) {
+			return queueSubscriptionEmail(tx, id, "Subscription confirmed")
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	s.kickEmails()
 	if dateString(sub.StartDate) <= dateString(s.today()) {
 		if _, err := s.activate(ctx, id); err != nil {
 			return nil, err
@@ -279,10 +304,35 @@ func (s *SalesService) ConfirmQuotation(ctx context.Context, id int64) (*dto.Sub
 }
 
 func (s *SalesService) activate(ctx context.Context, id int64) (bool, error) {
-	res := s.db.WithContext(ctx).Exec(`UPDATE subscriptions SET status = 'active', next_billing_date = start_date,
-		billing_anchor_day = EXTRACT(DAY FROM start_date)::int, activated_at = now(), updated_at = now()
-		WHERE id = ? AND status = 'confirmed'`, id)
-	return res.RowsAffected == 1, res.Error
+	activated := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Exec(`UPDATE subscriptions SET status = 'active', next_billing_date = start_date,
+   billing_anchor_day = EXTRACT(DAY FROM start_date)::int, activated_at = now(), updated_at = now()
+   WHERE id = ? AND status = 'confirmed'`, id)
+		if res.Error != nil {
+			return res.Error
+		}
+		activated = res.RowsAffected == 1
+		if activated {
+			// An advance renewal request keeps the current contract active until
+			// its confirmed replacement actually starts.
+			var sub models.Subscription
+			if err := tx.First(&sub, id).Error; err != nil {
+				return err
+			}
+			if sub.ParentSubscriptionID != nil {
+				if err := tx.Exec("UPDATE subscriptions SET status = 'renewed', closed_at = now(), updated_at = now() WHERE id = ? AND status IN ('active','paused','closed','confirmed')", *sub.ParentSubscriptionID).Error; err != nil {
+					return err
+				}
+			}
+			return queueSubscriptionEmail(tx, id, "Subscription activated")
+		}
+		return nil
+	})
+	if err == nil && activated {
+		s.kickEmails()
+	}
+	return activated, err
 }
 
 // ======================= subscription lifecycle =======================
@@ -302,10 +352,19 @@ func (s *SalesService) Pause(ctx context.Context, id int64) (*dto.SubscriptionRe
 // Resume starts a fresh billing cycle today (no charge for the paused time).
 func (s *SalesService) Resume(ctx context.Context, id int64) (*dto.SubscriptionResponse, error) {
 	t := s.today()
+	next := t
+	var existing models.Invoice
+	if err := s.db.WithContext(ctx).Where("subscription_id = ? AND period_start = ?", id, dateString(t)).First(&existing).Error; err == nil && existing.PeriodEnd != nil {
+		next = existing.PeriodEnd.AddDate(0, 0, 1)
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
 	out, err := s.setStatus(ctx, id, []models.SubscriptionStatus{models.SubPaused},
-		map[string]any{"status": models.SubActive, "paused_at": nil, "next_billing_date": t, "billing_anchor_day": t.Day()}, "resume")
+		map[string]any{"status": models.SubActive, "paused_at": nil, "next_billing_date": next, "billing_anchor_day": t.Day()}, "resume")
 	if err == nil {
-		_, _ = s.billDue(ctx, id, t)
+		if _, err := s.billDue(ctx, id, t); err != nil {
+			return nil, err
+		}
 		return s.GetSubscription(ctx, id)
 	}
 	return out, err
@@ -323,36 +382,60 @@ func (s *SalesService) Close(ctx context.Context, id int64) (*dto.SubscriptionRe
 		map[string]any{"status": models.SubClosed, "close_reason": "closed_early", "closed_at": s.clock.Now()}, "close")
 }
 
-// Renew creates a new draft quotation that starts the day after this one
-// ends (or today), with the same lines; this one becomes "renewed".
+// Renew creates a visible renewal quotation with the same lines. The current
+// subscription stays active until the confirmed replacement actually starts.
 func (s *SalesService) Renew(ctx context.Context, actorID int64, id int64) (*dto.SubscriptionResponse, error) {
-	sub, err := s.load(s.db.WithContext(ctx), id)
+	var renewalID int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var sub models.Subscription
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Plan").Preload("Items").First(&sub, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apperr.NotFound("subscription")
+			}
+			return err
+		}
+		if sub.Plan != nil && !sub.Plan.IsRenewable {
+			return apperr.Rule("PLAN_NOT_RENEWABLE", "this plan can't be renewed")
+		}
+		if sub.Status != models.SubActive && sub.Status != models.SubPaused && sub.Status != models.SubClosed {
+			return apperr.InvalidState("only active, paused or closed subscriptions can be renewed")
+		}
+		var pending int64
+		if err := tx.Model(&models.Subscription{}).Where("parent_subscription_id = ? AND status IN ('draft','quotation','confirmed','active','paused')", id).Count(&pending).Error; err != nil {
+			return err
+		}
+		if pending > 0 {
+			return apperr.Conflict("a renewal quotation already exists for this subscription")
+		}
+		start := s.today()
+		if sub.ExpiryDate != nil && !sub.ExpiryDate.Before(start) {
+			start = sub.ExpiryDate.AddDate(0, 0, 1)
+		}
+		items := make([]dto.QuotationLineInput, len(sub.Items))
+		for i, it := range sub.Items {
+			items[i] = dto.QuotationLineInput{ProductID: it.ProductID, VariantID: it.VariantID, Quantity: it.Quantity}
+		}
+		nested := *s
+		nested.db = tx
+		terms := sub.PaymentTermsDays
+		out, err := nested.createQuotation(ctx, actorID, dto.CreateQuotationRequest{CustomerID: sub.CustomerID, PlanID: sub.PlanID, StartDate: dateString(start), PaymentTermsDays: &terms, Items: items}, false)
+		if err != nil {
+			return err
+		}
+		renewalID = out.ID
+		if err := tx.Model(&models.Subscription{}).Where("id = ?", renewalID).Update("parent_subscription_id", id).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.Subscription{}).Where("id = ?", renewalID).Update("status", models.SubQuotation).Error; err != nil {
+			return err
+		}
+		return queueSubscriptionEmail(tx, renewalID, "Renewal quotation requested")
+	})
 	if err != nil {
 		return nil, err
 	}
-	if sub.Plan != nil && !sub.Plan.IsRenewable {
-		return nil, apperr.Rule("PLAN_NOT_RENEWABLE", "this plan can't be renewed")
-	}
-	if sub.Status != models.SubActive && sub.Status != models.SubPaused && sub.Status != models.SubClosed {
-		return nil, apperr.InvalidState("only active, paused or closed subscriptions can be renewed")
-	}
-	start := s.today()
-	if sub.ExpiryDate != nil && sub.ExpiryDate.After(start) {
-		start = sub.ExpiryDate.AddDate(0, 0, 1)
-	}
-	items := make([]dto.QuotationLineInput, len(sub.Items))
-	for i, it := range sub.Items {
-		items[i] = dto.QuotationLineInput{ProductID: it.ProductID, VariantID: it.VariantID, Quantity: it.Quantity}
-	}
-	terms := sub.PaymentTermsDays
-	out, err := s.CreateQuotation(ctx, actorID, dto.CreateQuotationRequest{CustomerID: sub.CustomerID, PlanID: sub.PlanID,
-		StartDate: dateString(start), PaymentTermsDays: &terms, Items: items})
-	if err != nil {
-		return nil, err
-	}
-	s.db.WithContext(ctx).Model(&models.Subscription{}).Where("id = ?", out.ID).Update("parent_subscription_id", id)
-	s.db.WithContext(ctx).Model(&models.Subscription{}).Where("id = ?", id).Updates(map[string]any{"status": models.SubRenewed, "closed_at": s.clock.Now()})
-	return s.GetSubscription(ctx, out.ID)
+	s.kickEmails()
+	return s.GetSubscription(ctx, renewalID)
 }
 
 // BillNow invoices whatever is due for one subscription (same code as the scheduler).
@@ -418,7 +501,10 @@ func (s *SalesService) billNextPeriod(ctx context.Context, id int64, asOf time.T
 		start := *sub.NextBillingDate
 		// Contract ended: close instead of billing past the expiry date.
 		if sub.ExpiryDate != nil && start.After(*sub.ExpiryDate) {
-			return tx.Model(&sub).Updates(map[string]any{"status": models.SubClosed, "close_reason": "expired", "closed_at": s.clock.Now()}).Error
+			if err := tx.Model(&sub).Updates(map[string]any{"status": models.SubClosed, "close_reason": "expired", "closed_at": s.clock.Now()}).Error; err != nil {
+				return err
+			}
+			return queueSubscriptionEmail(tx, sub.ID, "Subscription expired")
 		}
 		next := NextBillingDate(start, plan.BillingPeriod, plan.BillingInterval, sub.BillingAnchorDay)
 		end := next.AddDate(0, 0, -1)
@@ -519,11 +605,21 @@ func (s *SalesService) billNextPeriod(ctx context.Context, id int64, asOf time.T
 		if err := tx.Model(&models.Subscription{}).Where("id = ?", sub.ID).Updates(fields).Error; err != nil {
 			return err
 		}
+		if fields["status"] == models.SubClosed {
+			if err := queueSubscriptionEmail(tx, sub.ID, "Subscription automatically closed"); err != nil {
+				return err
+			}
+		}
+		if s.autoConfirm {
+			if err := queueInvoiceEmail(tx, inv.ID, "Invoice issued"); err != nil {
+				return err
+			}
+		}
 		billed, notifyInvoice = true, inv.ID
 		return nil
 	})
 	if err == nil && notifyInvoice != 0 && s.autoConfirm {
-		go func() { _ = s.emailInvoice(context.Background(), notifyInvoice) }()
+		s.kickEmails()
 	}
 	return billed, err
 }
@@ -552,9 +648,24 @@ func (s *SalesService) RunBilling(ctx context.Context, asOf time.Time) dto.Billi
 		}
 	}
 	// Quotations that were never accepted in time.
-	res := db.Exec(`UPDATE subscriptions SET status = 'closed', close_reason = 'quotation_expired', closed_at = now()
-		WHERE status IN ('draft','quotation') AND quotation_valid_until < ?`, dateString(asOf))
-	out.Closed += int(res.RowsAffected)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var expired []int64
+		res := tx.Raw(`UPDATE subscriptions SET status = 'closed', close_reason = 'quotation_expired', closed_at = now(), updated_at = now()
+            WHERE status IN ('draft','quotation') AND quotation_valid_until < ? RETURNING id`, dateString(asOf)).Scan(&expired)
+		if res.Error != nil {
+			return res.Error
+		}
+		for _, id := range expired {
+			if err := queueSubscriptionEmail(tx, id, "Quotation expired"); err != nil {
+				return err
+			}
+		}
+		out.Closed += len(expired)
+		return nil
+	})
+	if err != nil {
+		out.Errors = append(out.Errors, err.Error())
+	}
 
 	var due []int64
 	db.Model(&models.Subscription{}).Where("status = 'active' AND next_billing_date <= ?", dateString(asOf)).Order("next_billing_date").Pluck("id", &due)
@@ -566,6 +677,10 @@ func (s *SalesService) RunBilling(ctx context.Context, asOf time.Time) dto.Billi
 			slog.Error("billing failed", "subscription_id", id, "err", err)
 		}
 	}
+	if err := s.QueueRenewalReminders(ctx, asOf); err != nil {
+		out.Errors = append(out.Errors, "renewal reminders: "+err.Error())
+	}
+	s.kickEmails()
 	return out
 }
 
@@ -756,16 +871,26 @@ func (s *SalesService) GetInvoice(ctx context.Context, id int64) (*dto.InvoiceRe
 }
 
 func (s *SalesService) ConfirmInvoice(ctx context.Context, id int64) (*dto.InvoiceResponse, error) {
-	res := s.db.WithContext(ctx).Exec("UPDATE invoices SET status = 'confirmed', confirmed_at = now(), updated_at = now() WHERE id = ? AND status = 'draft'", id)
-	if res.Error != nil {
-		return nil, res.Error
-	}
-	if res.RowsAffected == 0 {
-		if _, err := s.GetInvoice(ctx, id); err != nil {
-			return nil, err
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Exec("UPDATE invoices SET status = 'confirmed', confirmed_at = now(), updated_at = now() WHERE id = ? AND status = 'draft'", id)
+		if res.Error != nil {
+			return res.Error
 		}
-		return nil, apperr.InvalidState("only draft invoices can be confirmed")
+		if res.RowsAffected == 0 {
+			var inv models.Invoice
+			if err := tx.First(&inv, id).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+				return apperr.NotFound("invoice")
+			} else if err != nil {
+				return err
+			}
+			return apperr.InvalidState("only draft invoices can be confirmed")
+		}
+		return queueInvoiceEmail(tx, id, "Invoice issued")
+	})
+	if err != nil {
+		return nil, err
 	}
+	s.kickEmails()
 	return s.GetInvoice(ctx, id)
 }
 
@@ -790,11 +915,15 @@ func (s *SalesService) CancelInvoice(ctx context.Context, id int64, reason strin
 				return err
 			}
 		}
-		return tx.Exec("DELETE FROM discount_usages WHERE invoice_id = ?", id).Error
+		if err := tx.Exec("DELETE FROM discount_usages WHERE invoice_id = ?", id).Error; err != nil {
+			return err
+		}
+		return queueInvoiceEmail(tx, id, "Invoice cancelled")
 	})
 	if err != nil {
 		return nil, err
 	}
+	s.kickEmails()
 	return s.GetInvoice(ctx, id)
 }
 
@@ -832,16 +961,6 @@ func (s *SalesService) emailInvoice(ctx context.Context, id int64) error {
 		return err
 	}
 	return s.db.WithContext(ctx).Exec("UPDATE invoices SET sent_at = now() WHERE id = ?", id).Error
-}
-
-func (s *SalesService) notify(customerID int64, subject, body string) {
-	go func() {
-		var email string
-		s.db.Unscoped().Model(&models.Customer{}).Where("id = ?", customerID).Select("email").Scan(&email)
-		if email != "" {
-			_ = s.mailer.Send(context.Background(), mailer.Message{To: email, Subject: subject, Body: body + "\n" + brand.EmailSignature})
-		}
-	}()
 }
 
 // ======================= payments list =======================

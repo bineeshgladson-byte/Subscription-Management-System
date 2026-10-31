@@ -799,13 +799,14 @@ paths:
       tags: [Plans]
       summary: List plans
       description: |
-        Any logged-in user. Customers only get ACTIVE plans available today (filters other than q and
-        billing_period are ignored for them) and no active_subscriptions count.
+        Any logged-in user. Customers only get ACTIVE plans available today (filters other than q,
+        billing_period and product_id are ignored for them) and no active_subscriptions count.
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
         - { name: sort, in: query, description: 'name | price | created_at | available_from', schema: { type: string } }
         - { name: q, in: query, schema: { type: string } }
+        - { name: product_id, in: query, description: 'Only plans containing this product; supported for every role', schema: { type: integer, format: int64, minimum: 1 } }
         - { name: status, in: query, schema: { type: string, enum: [active, archived, all], default: active } }
         - { name: billing_period, in: query, schema: { type: string, enum: [daily, weekly, monthly, yearly] } }
         - { name: available_on, in: query, description: 'only plans available on this date', schema: { type: string, format: date } }

@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/brightloop/subscriptions/backend/internal/apperr"
+	"github.com/brightloop/subscriptions/backend/internal/dto"
 	"github.com/brightloop/subscriptions/backend/internal/middleware"
 	"github.com/brightloop/subscriptions/backend/pkg/pagination"
 	"github.com/brightloop/subscriptions/backend/pkg/response"
@@ -105,4 +106,18 @@ func (h *SalesHandler) MyPayments(c *gin.Context) {
 		return
 	}
 	response.List(c, list, p.Meta(total))
+}
+
+// POST /me/quotations
+func (h *SalesHandler) MyRequestQuotation(c *gin.Context) {
+	cid, ok := customerID(c)
+	if !ok {
+		return
+	}
+	var req dto.CreateMyQuotationRequest
+	if !bind(c, &req) {
+		return
+	}
+	out, err := h.svc.MyRequestQuotation(c.Request.Context(), cid, middleware.CurrentUserID(c), req)
+	reply(c, out, err)
 }

@@ -23,6 +23,13 @@ type CreateQuotationRequest struct {
 	Items               []QuotationLineInput `json:"items" binding:"omitempty,max=50,dive"`
 }
 
+// Customer portal request (POST /me/quotations). Customer id comes from JWT.
+type CreateMyQuotationRequest struct {
+	PlanID     int64  `json:"plan_id" binding:"required,min=1"`
+	StartDate  string `json:"start_date"`
+	ExpiryDate string `json:"expiry_date"`
+}
+
 type SubItemResponse struct {
 	ID           int64  `json:"id"`
 	ProductID    int64  `json:"product_id"`

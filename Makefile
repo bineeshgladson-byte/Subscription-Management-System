@@ -86,7 +86,7 @@ migrate: ## Apply pending migrations
 migrate-down: ## Roll back the LAST migration
 	$(COMPOSE) run --rm migrate -path=/migrations -database "$(DATABASE_URL)" down 1
 
-seed: ## Load demo catalogue (safe to repeat)
+seed: ## Run seed scripts (currently no-op; demo data removed)
 	@for f in database/seeds/*.sql; do echo "-> $$f"; \
 	  $(COMPOSE) exec -T db psql -v ON_ERROR_STOP=1 -U $(POSTGRES_USER) -d $(POSTGRES_DB) -f /seeds/$$(basename $$f); done
 

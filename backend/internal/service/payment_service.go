@@ -10,6 +10,8 @@ import (
 	"github.com/brightloop/subscriptions/backend/internal/dto"
 	"github.com/brightloop/subscriptions/backend/internal/models"
 	"github.com/brightloop/subscriptions/backend/internal/repository"
+	"github.com/brightloop/subscriptions/backend/pkg/brand"
+	"github.com/brightloop/subscriptions/backend/pkg/mailer"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -18,17 +20,20 @@ type PaymentService struct {
 	db       *gorm.DB
 	payments *repository.PaymentRepo
 	invoices *repository.InvoiceRepo
+	mail     mailer.Mailer
 }
 
 func NewPaymentService(
 	db *gorm.DB,
 	payments *repository.PaymentRepo,
 	invoices *repository.InvoiceRepo,
+	mail mailer.Mailer,
 ) *PaymentService {
 	return &PaymentService{
 		db:       db,
 		payments: payments,
 		invoices: invoices,
+		mail:     mail,
 	}
 }
 
@@ -58,6 +63,7 @@ func (s *PaymentService) RecordPayment(
 
 	var payment *models.Payment
 	var invoice *models.Invoice
+	created := false
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 
@@ -153,7 +159,14 @@ func (s *PaymentService) RecordPayment(
 
 		invoice.AmountPaid = newAmountPaid
 		invoice.Status = newStatus
-
+		created = true
+		body := fmt.Sprintf("Payment received\n\nReceipt: %s\nInvoice: %s\nAmount: ₹%s\nMethod: %s\nPayment date: %s\nTotal paid: ₹%s\nRemaining amount due: ₹%s\n", payment.PaymentNumber, invoice.InvoiceNumber, payment.Amount.StringFixed(2), payment.Method, req.PaymentDate, newAmountPaid.StringFixed(2), invoice.Total.Sub(newAmountPaid).StringFixed(2))
+		if err := queueCustomerEmail(tx, fmt.Sprintf("payment-received:%d", payment.ID), invoice.CustomerID, nil, brand.Name+": payment received · "+payment.PaymentNumber, body); err != nil {
+			return err
+		}
+		if newStatus == models.InvoicePaid {
+			return queueInvoiceEmail(tx, invoice.ID, "Invoice paid")
+		}
 		return nil
 	})
 
@@ -161,5 +174,12 @@ func (s *PaymentService) RecordPayment(
 		return nil, nil, err
 	}
 
+	if created {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			dispatchEmails(ctx, s.db, s.mail)
+		}()
+	}
 	return payment, invoice, nil
 }

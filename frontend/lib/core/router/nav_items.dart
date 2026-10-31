@@ -26,7 +26,6 @@ const navItems = <NavItem>[
   NavItem('/taxes', 'Taxes', Icons.percent, _team),
   NavItem('/plans', 'Plans', Icons.layers_outlined, _all),
   NavItem('/templates', 'Templates', Icons.description_outlined, _team),
-  NavItem('/pricing', 'Price calculator', Icons.calculate_outlined, _team),
   NavItem('/quotations', 'Quotations', Icons.request_quote_outlined, _team),
   NavItem('/subscriptions', 'Subscriptions', Icons.autorenew, _team),
   NavItem('/invoices', 'Invoices', Icons.receipt_long_outlined, _team),

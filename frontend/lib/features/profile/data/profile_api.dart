@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/network/json.dart';
+import '../../../core/network/navigation_cache.dart';
 
 /// GET/PUT /auth/me including the customer billing profile.
 class Profile {
@@ -43,5 +44,6 @@ final profileRepositoryProvider = Provider(
   (ref) => ProfileRepository(ref.watch(apiClientProvider)),
 );
 final profileProvider = FutureProvider.autoDispose<Profile>(
-  (ref) => ref.watch(profileRepositoryProvider).get(),
+  (ref) =>
+      cacheForNavigation(ref, () => ref.watch(profileRepositoryProvider).get()),
 );

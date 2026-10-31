@@ -95,7 +95,7 @@ class _Sidebar extends StatelessWidget {
             horizontalTitleGap: 12,
             leading: Icon(item.icon, size: 20, color: WorkspaceTheme.ink),
             title: Text(
-              item.path == '/plans' ? 'Pricing & Plans' : item.label,
+              item.label,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w500 : FontWeight.w400,

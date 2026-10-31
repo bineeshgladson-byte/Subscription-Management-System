@@ -14,8 +14,10 @@ import '../../customers/data/customers_api.dart';
 import '../../discounts/data/discounts_api.dart';
 import '../../plans/data/plans_api.dart';
 import '../../products/data/products_api.dart';
+import '../../profile/data/profile_api.dart';
 import '../../sales/data/sales_api.dart';
 import '../../staff/data/staff_api.dart';
+import 'customer_dashboard.dart';
 
 /// Everything on this page comes from live API calls. Revenue, MRR and
 /// overdue invoices join it when the billing modules (A9–A11) are merged.
@@ -76,11 +78,9 @@ final dashboardProvider = FutureProvider.autoDispose<DashboardData>((
 
 /// Customers see the plans they can buy.
 final customerDashboardProvider = FutureProvider.autoDispose<List<Plan>>(
-  (ref) async => (await ref.watch(plansRepositoryProvider).list((
-    q: '',
-    status: 'active',
-    period: null,
-  ))).items,
+  (ref) async => (await ref.watch(
+    plansProvider((q: '', status: 'active', period: null)).future,
+  )).items,
 );
 
 class DashboardScreen extends ConsumerWidget {
@@ -92,60 +92,19 @@ class DashboardScreen extends ConsumerWidget {
     if (user == null) return const SizedBox.shrink();
     final first = user.fullName.split(' ').first;
     if (user.role == Role.customer) {
+      // Warm the first customer pages while the overview is visible. These
+      // requests run independently; they never block the dashboard content.
+      ref.watch(mySubscriptionsProvider(1));
+      ref.watch(myInvoicesProvider(1));
+      ref.watch(myPaymentsProvider(1));
+      ref.watch(profileProvider);
       return PageFrame(
         title: 'Overview',
-        subtitle: 'Welcome back, $first.',
+        subtitle: 'Your subscriptions and billing, together in one place.',
         child: AsyncView(
           value: ref.watch(customerDashboardProvider),
           onRetry: () => ref.invalidate(customerDashboardProvider),
-          builder: (plans) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  SizedBox(
-                    width: 220,
-                    child: MetricTile(
-                      label: 'Plans you can buy',
-                      value: '${plans.length}',
-                    ),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: MetricTile(
-                      label: 'Account',
-                      value: user.email.split('@').first,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Available plans',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 10),
-              if (plans.isEmpty)
-                const EmptyState(
-                  icon: Icons.layers_outlined,
-                  title: 'No plans right now',
-                  message: 'Please check back soon.',
-                ),
-              for (final p in plans.take(5))
-                ResourceTile(
-                  title: p.name,
-                  subtitle: '${Fmt.inr(p.price)} · ${p.billingLabel}',
-                  onTap: () => context.go('/plans'),
-                ),
-              const SizedBox(height: 8),
-              Text(
-                'See My subscriptions, My invoices and Payment history in the menu.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
+          builder: (plans) => CustomerDashboard(user: user, plans: plans),
         ),
       );
     }
