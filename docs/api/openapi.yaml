@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Brightloop Subscription Management API
+  title: Subly API (Brightloop Software)
   version: 0.1.0
   description: |
     THE API CONTRACT. Change this file (in its own PR, reviewed by one backend
@@ -12,7 +12,7 @@ info:
     - Lists accept page, page_size (max 100), sort (e.g. -created_at).
     - Roles are listed in each operation's description; the backend enforces them.
 
-    Status: auth + a few core endpoints are fully specified. Every other endpoint
+    Status: auth + staff are implemented. A few other core endpoints are specified. Every other endpoint
     in the architecture plan is registered in backend/internal/router and returns
     501 until implemented; add its spec here when you start on it.
 servers:
@@ -24,6 +24,7 @@ servers:
 tags:
   - name: System
   - name: Auth
+  - name: Staff
   - name: Products
   - name: Plans
   - name: Invoices
@@ -108,7 +109,12 @@ paths:
   /auth/forgot-password:
     post:
       tags: [Auth]
-      summary: Email a password reset link (always 200)
+      summary: Email a password reset link
+      description: |
+        Public. ALWAYS returns 200 with the same message, whether or not the email is
+        registered or active, so it can't be used to discover accounts. The link
+        (valid 30 min) goes to FRONTEND_URL/reset-password?token=...  Requesting a new
+        link invalidates older ones. In development the email appears in Mailpit.
       security: []
       requestBody:
         required: true
@@ -118,14 +124,17 @@ paths:
               type: object
               required: [email]
               properties:
-                email: { type: string, format: email }
+                email: { type: string, format: email, example: rahul@example.in }
       responses:
-        '200': { $ref: '#/components/responses/EmptyOK' }
+        '200': { $ref: '#/components/responses/Message' }
 
   /auth/reset-password:
     post:
       tags: [Auth]
-      summary: Set a new password using the emailed token
+      summary: Set a new password using an emailed token
+      description: |
+        Public. Used for both forgot-password links and staff invite links.
+        The token is single-use. On success every existing session (JWT) of the user is revoked.
       security: []
       requestBody:
         required: true
@@ -135,17 +144,22 @@ paths:
               type: object
               required: [token, password]
               properties:
-                token: { type: string }
+                token: { type: string, minLength: 64, maxLength: 64, description: 'from the email link' }
                 password: { type: string, example: 'NewPass#2026' }
       responses:
-        '200': { $ref: '#/components/responses/EmptyOK' }
-        '400': { $ref: '#/components/responses/ValidationError' }
+        '200': { $ref: '#/components/responses/Message' }
+        '400':
+          description: Weak password, or token invalid / expired / already used
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+              example: { success: false, error: { code: VALIDATION_ERROR, message: This reset link is invalid or has expired, details: { token: is invalid or has expired; request a new link } } }
 
   /auth/me:
     get:
       tags: [Auth]
       summary: Current user
-      description: Any logged-in user.
+      description: Any logged-in user. Customers also get `customer_id` and `profile`.
       responses:
         '200':
           description: OK
@@ -158,6 +172,198 @@ paths:
                     properties:
                       data: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
+    put:
+      tags: [Auth]
+      summary: Update my profile
+      description: |
+        Any logged-in user. Only fields sent are changed; send "" to clear an optional field.
+        Admin/staff may only change full_name. Email cannot be changed here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProfileRequest' }
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change my password
+      description: |
+        Any logged-in user. All other sessions are signed out. The response contains a
+        NEW access token; the app must store it and discard the old one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, example: 'Changed#2026' }
+      responses:
+        '200':
+          description: Password changed; fresh token
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /staff:
+    get:
+      tags: [Staff]
+      summary: List staff accounts
+      description: 'Roles: admin.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - { name: sort, in: query, description: 'created_at | full_name | email | last_login_at, prefix - for descending', schema: { type: string, example: -created_at } }
+        - { name: q, in: query, description: 'search name or email', schema: { type: string } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Staff' } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Staff]
+      summary: Create a staff account
+      description: |
+        Roles: admin ("Only the admin can create staff accounts").
+        Omit `password` (recommended) and the staff member is emailed a link to set their
+        own password (valid 48 h); `invite_sent` tells you whether that email went out.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [full_name, email]
+              properties:
+                full_name: { type: string, example: Priya Nair }
+                email: { type: string, format: email, example: priya@brightloop.in }
+                password: { type: string, description: 'optional; must meet the password policy' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          staff: { $ref: '#/components/schemas/Staff' }
+                          invite_sent: { type: boolean }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /staff/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      tags: [Staff]
+      summary: Get a staff account
+      description: 'Roles: admin. 404 if the id belongs to a customer or admin.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Staff' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Staff]
+      summary: Edit a staff account
+      description: 'Roles: admin. Only fields sent are changed.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                full_name: { type: string }
+                email: { type: string, format: email }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Staff' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /staff/{id}/status:
+    patch:
+      tags: [Staff]
+      summary: Activate or deactivate a staff account
+      description: 'Roles: admin. Deactivation is immediate: the staff member''s existing tokens stop working.'
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [is_active]
+              properties:
+                is_active: { type: boolean, example: false }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Staff' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /products:
     get:
@@ -319,6 +525,25 @@ components:
     Sort: { name: sort, in: query, description: 'column, prefix with - for descending', schema: { type: string, example: -created_at } }
 
   responses:
+    Message:
+      description: OK
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      message: { type: string }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example: { success: false, error: { code: NOT_FOUND, message: staff member not found } }
     EmptyOK:
       description: OK
       content:
@@ -414,7 +639,36 @@ components:
         email: { type: string, example: priya@brightloop.in }
         full_name: { type: string, example: Priya Nair }
         role: { $ref: '#/components/schemas/Role' }
-        customer_id: { type: integer, format: int64, nullable: true }
+        customer_id: { type: integer, format: int64, description: 'customers only' }
+        profile: { $ref: '#/components/schemas/CustomerProfile' }
+
+    CustomerProfile:
+      type: object
+      description: customers only
+      properties:
+        phone: { type: string, nullable: true }
+        company_name: { type: string, nullable: true }
+        billing_address: { type: string, nullable: true }
+        gstin: { type: string, nullable: true, example: 29ABCDE1234F1Z5 }
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        full_name: { type: string, minLength: 2, maxLength: 120 }
+        phone: { type: string, maxLength: 20, description: customers only }
+        company_name: { type: string, maxLength: 150, description: customers only }
+        billing_address: { type: string, maxLength: 500, description: customers only }
+        gstin: { type: string, description: 'customers only; Indian GSTIN, stored upper-case' }
+
+    Staff:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 4 }
+        email: { type: string, example: priya@brightloop.in }
+        full_name: { type: string, example: Priya Nair }
+        is_active: { type: boolean }
+        last_login_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
 
     LoginResponse:
       type: object

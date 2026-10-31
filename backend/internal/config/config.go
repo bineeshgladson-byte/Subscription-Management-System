@@ -26,9 +26,17 @@ type Config struct {
 	BillingCron        string
 	InvoiceAutoConfirm bool
 
-	SMTPHost string
-	SMTPPort int
-	MailFrom string
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string // empty for Mailpit
+	SMTPPassword string
+	MailFrom     string
+	MailFromName string
+	// EmailShowCodes puts reset/invite codes in email text for Postman testing.
+	EmailShowCodes bool
+
+	ResetTokenTTL  time.Duration // forgot-password links
+	InviteTokenTTL time.Duration // "set your password" links for new staff
 
 	FrontendURL        string
 	CORSAllowedOrigins []string
@@ -60,12 +68,20 @@ func Load() (Config, error) {
 		InvoiceAutoConfirm: get("INVOICE_AUTO_CONFIRM", "true") == "true",
 		SMTPHost:           get("SMTP_HOST", "localhost"),
 		SMTPPort:           getInt("SMTP_PORT", 1025),
+		SMTPUsername:       os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:       os.Getenv("SMTP_PASSWORD"),
 		MailFrom:           get("MAIL_FROM", "billing@brightloop.local"),
+		MailFromName:       get("MAIL_FROM_NAME", "Subly"),
+		ResetTokenTTL:      time.Duration(getInt("RESET_TOKEN_TTL_MINUTES", 30)) * time.Minute,
+		InviteTokenTTL:     time.Duration(getInt("INVITE_TOKEN_TTL_HOURS", 48)) * time.Hour,
 		FrontendURL:        get("FRONTEND_URL", "http://localhost:5000"),
 		CORSAllowedOrigins: split(get("CORS_ALLOWED_ORIGINS", "http://localhost:5000")),
 		SeedAdminEmail:     os.Getenv("SEED_ADMIN_EMAIL"),
 		SeedAdminPassword:  os.Getenv("SEED_ADMIN_PASSWORD"),
 	}
+
+	// Default: show codes in development only. Override with EMAIL_SHOW_CODES=true|false.
+	cfg.EmailShowCodes = get("EMAIL_SHOW_CODES", fmt.Sprint(cfg.IsDev())) == "true"
 
 	if cfg.DatabaseURL == "" {
 		return cfg, fmt.Errorf("DATABASE_URL is required")

@@ -30,3 +30,14 @@ func TestNormalizeEmail(t *testing.T) {
 		t.Errorf("expected invalid, got %q", got)
 	}
 }
+
+func TestGSTIN(t *testing.T) {
+	if got := GSTIN(" 29abcde1234f1z5 "); got != "29ABCDE1234F1Z5" {
+		t.Errorf("valid GSTIN rejected: %q", got)
+	}
+	for _, bad := range []string{"", "29ABCDE1234F1Y5", "ABCDE1234F1Z5", "29ABCDE1234F1Z"} {
+		if GSTIN(bad) != "" {
+			t.Errorf("invalid GSTIN accepted: %q", bad)
+		}
+	}
+}

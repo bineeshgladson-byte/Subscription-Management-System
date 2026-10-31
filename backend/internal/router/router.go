@@ -23,7 +23,10 @@ type Deps struct {
 	DB     *gorm.DB
 	JWT    *jwtutil.Manager
 
-	Auth *handler.AuthHandler
+	Sessions middleware.SessionChecker
+
+	Auth  *handler.AuthHandler
+	Staff *handler.StaffHandler
 }
 
 // Role guards, reused by every routes_*.go file.
@@ -53,7 +56,7 @@ func New(d Deps) *gin.Engine {
 
 	// Everything below requires a valid JWT.
 	authed := api.Group("")
-	authed.Use(middleware.Auth(d.JWT))
+	authed.Use(middleware.Auth(d.JWT, d.Sessions))
 
 	registerAuthRoutes(authed, d)
 	registerStaffRoutes(authed, d)

@@ -7,7 +7,7 @@ GO_DOCKER := docker run --rm -v "$(CURDIR)/backend":/src -w /src -v brightloop-g
 export
 
 .PHONY: help up down restart logs ps migrate migrate-down seed psql reset mock-api \
-        be-test be-vet be-fmt be-tidy fe-get fe-run fe-test fe-analyze
+        test-email be-test be-itest be-vet be-fmt be-tidy fe-get fe-run fe-test fe-analyze
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -44,11 +44,21 @@ reset: ## DANGER: delete the database volume and start fresh
 	$(COMPOSE) down -v
 	$(MAKE) up
 
+test-email: ## Send one test email with the .env SMTP settings: make test-email TO=you@gmail.com
+	@test -n "$(TO)" || (echo "usage: make test-email TO=you@example.com" && exit 2)
+	$(COMPOSE) build api >/dev/null
+	$(COMPOSE) run --rm --no-deps --entrypoint ./mailtest api "$(TO)"
+
 mock-api: ## Start the Prism mock API on :4010 from openapi.yaml
 	$(COMPOSE) --profile mock up -d mock
 
 be-test: ## Run Go tests (in Docker)
 	$(GO_DOCKER) go test ./...
+
+be-itest: ## Integration tests against the docker-compose database (run `make up` first)
+	docker run --rm --network brightloop_default -v "$(CURDIR)/backend":/src -w /src -v brightloop-gomod:/go/pkg/mod -e GOTOOLCHAIN=local \
+	  -e TEST_DATABASE_URL="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)?sslmode=disable" \
+	  golang:1.26-alpine go test -count=1 -v ./tests/integration/...
 
 be-vet: ## go vet (in Docker)
 	$(GO_DOCKER) go vet ./...

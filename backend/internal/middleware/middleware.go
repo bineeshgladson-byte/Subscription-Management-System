@@ -3,6 +3,7 @@
 package middleware
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
@@ -49,7 +50,12 @@ func Logger() gin.HandlerFunc {
 	}
 }
 
+// CORS lets the Flutter web app call the API. With no origins configured,
+// cross-origin requests are simply not allowed (instead of crashing).
 func CORS(allowedOrigins []string) gin.HandlerFunc {
+	if len(allowedOrigins) == 0 {
+		return func(c *gin.Context) { c.Next() }
+	}
 	return cors.New(cors.Config{
 		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -60,9 +66,16 @@ func CORS(allowedOrigins []string) gin.HandlerFunc {
 	})
 }
 
-// Auth requires a valid "Authorization: Bearer <jwt>" header and stores the
-// user id, role and (for customers) customer id in the Gin context.
-func Auth(jwt *jwtutil.Manager) gin.HandlerFunc {
+// SessionChecker confirms a token's user is still allowed in (active account,
+// token issued after the last password change). AuthService implements it.
+type SessionChecker interface {
+	CheckSession(ctx context.Context, userID int64, issuedAt time.Time) error
+}
+
+// Auth requires a valid "Authorization: Bearer <jwt>" header, checks the
+// session is still valid, and stores the user id, role and (for customers)
+// customer id in the Gin context.
+func Auth(jwt *jwtutil.Manager, sessions SessionChecker) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		token, ok := strings.CutPrefix(header, "Bearer ")
@@ -73,6 +86,14 @@ func Auth(jwt *jwtutil.Manager) gin.HandlerFunc {
 		claims, err := jwt.Parse(token)
 		if err != nil {
 			response.Error(c, apperr.Unauthenticated("invalid or expired token"))
+			return
+		}
+		var issuedAt time.Time
+		if claims.IssuedAt != nil {
+			issuedAt = claims.IssuedAt.Time
+		}
+		if err := sessions.CheckSession(c.Request.Context(), claims.UserID(), issuedAt); err != nil {
+			response.Error(c, err)
 			return
 		}
 		c.Set(CtxUserID, claims.UserID())
