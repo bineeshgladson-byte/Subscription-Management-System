@@ -1,0 +1,29 @@
+# Secrets
+.env
+*.env.local
+*.pem
+*.key
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.iml
+*.swp
+
+# Go
+backend/bin/
+backend/tmp/
+*.test
+*.out
+coverage.*
+
+# Flutter / Dart (frontend/.gitignore has the full list)
+frontend/build/
+frontend/.dart_tool/
+
+# Misc
+/tmp/
+*.log

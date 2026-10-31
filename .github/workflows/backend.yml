@@ -1,0 +1,44 @@
+name: backend
+on:
+  pull_request:
+    paths: ["backend/**", "database/**", ".github/workflows/backend.yml"]
+  push:
+    branches: [main, develop]
+    paths: ["backend/**", "database/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: brightloop
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: brightloop
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U brightloop" --health-interval 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - name: Apply migrations (proves up/down/up works)
+        working-directory: .
+        run: |
+          URL="postgres://brightloop:ci@localhost:5432/brightloop?sslmode=disable"
+          docker run --rm --network host -v "$PWD/database/migrations:/m" migrate/migrate:v4.18.3 -path=/m -database "$URL" up
+          docker run --rm --network host -v "$PWD/database/migrations:/m" migrate/migrate:v4.18.3 -path=/m -database "$URL" down -all
+          docker run --rm --network host -v "$PWD/database/migrations:/m" migrate/migrate:v4.18.3 -path=/m -database "$URL" up
+      - run: go test ./...
+        env:
+          TEST_DATABASE_URL: postgres://brightloop:ci@localhost:5432/brightloop?sslmode=disable
+      - run: go build ./cmd/api

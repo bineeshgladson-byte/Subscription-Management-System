@@ -1,0 +1,545 @@
+openapi: 3.0.3
+info:
+  title: Brightloop Subscription Management API
+  version: 0.1.0
+  description: |
+    THE API CONTRACT. Change this file (in its own PR, reviewed by one backend
+    and one Flutter dev) BEFORE changing handlers or Flutter repositories.
+
+    Conventions
+    - Base path /api/v1, JSON snake_case, dates YYYY-MM-DD, money as strings ("999.00").
+    - Every response uses the envelope { success, data, meta?, error? }.
+    - Lists accept page, page_size (max 100), sort (e.g. -created_at).
+    - Roles are listed in each operation's description; the backend enforces them.
+
+    Status: auth + a few core endpoints are fully specified. Every other endpoint
+    in the architecture plan is registered in backend/internal/router and returns
+    501 until implemented; add its spec here when you start on it.
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local API (docker compose)
+  - url: http://localhost:4010
+    description: Prism mock (make mock-api)
+
+tags:
+  - name: System
+  - name: Auth
+  - name: Products
+  - name: Plans
+  - name: Invoices
+  - name: Payments
+  - name: Dashboard
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Liveness and database ping
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          status: { type: string, example: ok }
+                          database: { type: string, example: ok }
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Customer self-registration
+      description: Public. Creates a user (role customer) and its customer record.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Registered
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in and receive a JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Email a password reset link (always 200)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200': { $ref: '#/components/responses/EmptyOK' }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Set a new password using the emailed token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, example: 'NewPass#2026' }
+      responses:
+        '200': { $ref: '#/components/responses/EmptyOK' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      description: Any logged-in user.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /products:
+    get:
+      tags: [Products]
+      summary: List products
+      description: 'Roles: admin, staff.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Sort'
+        - { name: q, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [active, archived] } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Product' } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Products]
+      summary: Create product with variants
+      description: 'Roles: admin.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /plans:
+    get:
+      tags: [Plans]
+      summary: List plans
+      description: 'Any logged-in user. Customers only receive active plans inside their availability window.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Plan' } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /invoices:
+    get:
+      tags: [Invoices]
+      summary: List invoices
+      description: 'Roles: admin, staff.'
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Sort'
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/InvoiceStatus' } }
+        - { name: overdue, in: query, schema: { type: boolean } }
+        - { name: customer_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/InvoiceSummary' } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /invoices/{id}/payments:
+    post:
+      tags: [Payments]
+      summary: Record a payment against an invoice
+      description: 'Roles: admin, staff. Send an Idempotency-Key header per form submit.'
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordPaymentRequest' }
+      responses:
+        '201':
+          description: Recorded
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          payment: { $ref: '#/components/schemas/Payment' }
+                          invoice: { $ref: '#/components/schemas/InvoiceSummary' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+
+  /dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: KPI tiles
+      description: 'Roles: admin (all fields), staff (financial fields omitted).'
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/DashboardSummary' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    PageSize: { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    Sort: { name: sort, in: query, description: 'column, prefix with - for descending', schema: { type: string, example: -created_at } }
+
+  responses:
+    EmptyOK:
+      description: OK
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    ValidationError:
+      description: Invalid input
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example: { success: false, error: { code: VALIDATION_ERROR, message: Some fields are invalid, details: { password: must include an uppercase letter } } }
+    Unauthenticated:
+      description: Missing/invalid token or wrong credentials
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example: { success: false, error: { code: UNAUTHENTICATED, message: invalid email or password } }
+    Forbidden:
+      description: Wrong role
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example: { success: false, error: { code: FORBIDDEN, message: you do not have access to this resource } }
+    Conflict:
+      description: Duplicate or illegal state change
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example: { success: false, error: { code: CONFLICT, message: email already registered } }
+    BusinessRule:
+      description: A business rule was broken
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example: { success: false, error: { code: BUSINESS_RULE, message: payment exceeds amount due, details: { rule: AMOUNT_EXCEEDS_DUE } } }
+
+  schemas:
+    Money:
+      type: string
+      pattern: '^-?\d+\.\d{2}$'
+      example: '999.00'
+
+    Envelope:
+      type: object
+      required: [success]
+      properties:
+        success: { type: boolean, example: true }
+        data: {}
+        meta: {}
+
+    ErrorEnvelope:
+      type: object
+      required: [success, error]
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, enum: [VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, INVALID_STATE, BUSINESS_RULE, NOT_IMPLEMENTED, INTERNAL_ERROR] }
+            message: { type: string }
+            details: { type: object, additionalProperties: { type: string } }
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer, example: 1 }
+        page_size: { type: integer, example: 20 }
+        total: { type: integer, example: 134 }
+
+    Role: { type: string, enum: [admin, staff, customer] }
+
+    RegisterRequest:
+      type: object
+      required: [full_name, email, password]
+      properties:
+        full_name: { type: string, example: Rahul Sharma }
+        email: { type: string, format: email, example: rahul@example.in }
+        password: { type: string, description: '9+ chars, upper, lower, special', example: 'Brightloop#2026' }
+        phone: { type: string, example: '9876543210' }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: admin@brightloop.local }
+        password: { type: string, example: 'Admin#Brightloop1' }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 4 }
+        email: { type: string, example: priya@brightloop.in }
+        full_name: { type: string, example: Priya Nair }
+        role: { $ref: '#/components/schemas/Role' }
+        customer_id: { type: integer, format: int64, nullable: true }
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token: { type: string, example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... }
+        expires_at: { type: string, format: date-time }
+        user: { $ref: '#/components/schemas/User' }
+
+    Variant:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 12 }
+        attribute: { type: string, example: Brand }
+        name: { type: string, example: Odoo Brand }
+        extra_price: { $ref: '#/components/schemas/Money' }
+        price: { $ref: '#/components/schemas/Money' }
+
+    ProductInput:
+      type: object
+      required: [name, product_type, sales_price]
+      properties:
+        name: { type: string, example: Software Subscription }
+        product_type: { type: string, enum: [software, service, addon] }
+        sales_price: { $ref: '#/components/schemas/Money' }
+        cost_price: { $ref: '#/components/schemas/Money' }
+        tax_id: { type: integer, format: int64, nullable: true }
+        description: { type: string }
+        variants:
+          type: array
+          items:
+            type: object
+            required: [attribute, name, extra_price]
+            properties:
+              attribute: { type: string }
+              name: { type: string }
+              extra_price: { $ref: '#/components/schemas/Money' }
+
+    Product:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 7 }
+        name: { type: string, example: Software Subscription }
+        product_type: { type: string, enum: [software, service, addon] }
+        sales_price: { $ref: '#/components/schemas/Money' }
+        cost_price: { $ref: '#/components/schemas/Money' }
+        tax_id: { type: integer, format: int64, nullable: true }
+        description: { type: string, nullable: true }
+        status: { type: string, enum: [active, archived] }
+        variants: { type: array, items: { $ref: '#/components/schemas/Variant' } }
+        created_at: { type: string, format: date-time }
+
+    Plan:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 3 }
+        name: { type: string, example: Starter Monthly }
+        price: { $ref: '#/components/schemas/Money' }
+        billing_period: { type: string, enum: [daily, weekly, monthly, yearly] }
+        billing_interval: { type: integer, example: 1 }
+        min_quantity: { type: integer, example: 1 }
+        available_from: { type: string, format: date }
+        available_until: { type: string, format: date, nullable: true }
+        is_pausable: { type: boolean }
+        is_closable: { type: boolean }
+        is_renewable: { type: boolean }
+        status: { type: string, enum: [active, archived] }
+
+    InvoiceStatus: { type: string, enum: [draft, confirmed, paid, cancelled] }
+
+    InvoiceSummary:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 140 }
+        invoice_number: { type: string, example: INV/2026/00042 }
+        customer:
+          type: object
+          properties:
+            id: { type: integer, format: int64 }
+            name: { type: string, example: Rahul Sharma }
+        invoice_date: { type: string, format: date }
+        due_date: { type: string, format: date }
+        total: { $ref: '#/components/schemas/Money' }
+        amount_paid: { $ref: '#/components/schemas/Money' }
+        amount_due: { $ref: '#/components/schemas/Money' }
+        status: { $ref: '#/components/schemas/InvoiceStatus' }
+        payment_status: { type: string, enum: [unpaid, partial, paid] }
+        is_overdue: { type: boolean }
+        days_overdue: { type: integer }
+
+    RecordPaymentRequest:
+      type: object
+      required: [method, amount, payment_date]
+      properties:
+        method: { type: string, enum: [upi, bank_transfer, card, cash] }
+        amount: { $ref: '#/components/schemas/Money' }
+        payment_date: { type: string, format: date }
+        reference: { type: string, example: UTR4415298811 }
+        notes: { type: string }
+
+    Payment:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 77 }
+        payment_number: { type: string, example: PAY/2026/00061 }
+        invoice_id: { type: integer, format: int64 }
+        method: { type: string, enum: [upi, bank_transfer, card, cash] }
+        amount: { $ref: '#/components/schemas/Money' }
+        payment_date: { type: string, format: date }
+        status: { type: string, enum: [pending, completed, failed, refunded] }
+
+    DashboardSummary:
+      type: object
+      properties:
+        total_customers: { type: integer, example: 412 }
+        active_subscriptions: { type: integer, example: 368 }
+        total_subscriptions: { type: integer, example: 455 }
+        mrr: { $ref: '#/components/schemas/Money' }
+        arr: { $ref: '#/components/schemas/Money' }
+        revenue_received: { $ref: '#/components/schemas/Money' }
+        outstanding: { $ref: '#/components/schemas/Money' }
+        overdue_invoices:
+          type: object
+          properties:
+            count: { type: integer, example: 14 }
+            amount: { $ref: '#/components/schemas/Money' }
+
+security:
+  - bearerAuth: []

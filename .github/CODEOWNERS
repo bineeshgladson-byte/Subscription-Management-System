@@ -1,0 +1,7 @@
+# Replace the placeholder handles with real GitHub usernames.
+# Owners are requested automatically as reviewers on PRs touching these paths.
+*                        @REPLACE_lead
+/backend/                @REPLACE_backend1 @REPLACE_backend2
+/frontend/               @REPLACE_flutter1 @REPLACE_flutter2
+/database/               @REPLACE_lead
+/docs/api/openapi.yaml   @REPLACE_backend1 @REPLACE_flutter1

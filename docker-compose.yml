@@ -1,0 +1,81 @@
+# Local development stack.  Usage:  cp .env.example .env && make up
+#   API          http://localhost:8080/api/v1   (health: /health)
+#   Swagger UI   http://localhost:8090
+#   Mailpit      http://localhost:8025          (every email the app sends lands here)
+#   Postgres     localhost:5433                 (user/pass/db from .env)
+#   Mock API     http://localhost:4010          (only with: make mock-api)
+#
+# Flutter runs on your machine, not in Docker (see frontend/README.md).
+
+name: brightloop
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: ${BUSINESS_TIMEZONE:-Asia/Kolkata}
+    ports:
+      - "${DB_HOST_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/seeds:/seeds:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    volumes:
+      - ./database/migrations:/migrations:ro
+    command: ["-path=/migrations", "-database", "${DATABASE_URL}", "up"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: ./backend
+    env_file: .env
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      API_PORT: "8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "8025:8025"   # web inbox
+      - "1025:1025"   # SMTP
+
+  swagger:
+    image: swaggerapi/swagger-ui:v5.17.14
+    environment:
+      SWAGGER_JSON: /spec/openapi.yaml
+    volumes:
+      - ./docs/api:/spec:ro
+    ports:
+      - "${SWAGGER_PORT:-8090}:8080"
+
+  # Fake API generated from docs/api/openapi.yaml so Flutter can work before the backend is ready.
+  mock:
+    image: stoplight/prism:5
+    command: ["mock", "-h", "0.0.0.0", "-d", "/spec/openapi.yaml"]
+    volumes:
+      - ./docs/api:/spec:ro
+    ports:
+      - "4010:4010"
+    profiles: ["mock"]
+
+volumes:
+  pgdata:
