@@ -27,6 +27,7 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
+
 	if err := run(); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -51,27 +52,58 @@ func run() error {
 	// Repositories
 	userRepo := repository.NewUserRepo()
 	customerRepo := repository.NewCustomerRepo()
+	subscriptionRepo := repository.NewSubscriptionRepo()
 
 	// Services
-	authSvc := service.NewAuthService(db, userRepo, customerRepo, hasher, jwtMgr, clk)
+	authSvc := service.NewAuthService(
+		db,
+		userRepo,
+		customerRepo,
+		hasher,
+		jwtMgr,
+		clk,
+	)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	subscriptionSvc := service.NewSubscriptionService(
+		db,
+		subscriptionRepo,
+	)
+
+	// Handlers
+	authHandler := handler.NewAuthHandler(authSvc)
+	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionSvc)
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
 	defer stop()
 
-	if created, err := authSvc.EnsureAdmin(ctx, cfg.SeedAdminEmail, cfg.SeedAdminPassword); err != nil {
+	if created, err := authSvc.EnsureAdmin(
+		ctx,
+		cfg.SeedAdminEmail,
+		cfg.SeedAdminPassword,
+	); err != nil {
 		return err
 	} else if created {
 		slog.Info("created first admin account", "email", cfg.SeedAdminEmail)
 	}
 
-	// HTTP
+	// HTTP router
 	engine := router.New(router.Deps{
-		Config: cfg,
-		DB:     db,
-		JWT:    jwtMgr,
-		Auth:   handler.NewAuthHandler(authSvc),
+		Config:       cfg,
+		DB:           db,
+		JWT:          jwtMgr,
+		Auth:         authHandler,
+		Subscription: subscriptionHandler,
 	})
-	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
+
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           engine,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
 	// Background jobs
 	sched := jobs.NewScheduler(clk)
@@ -81,7 +113,9 @@ func run() error {
 
 	go func() {
 		slog.Info("api listening", "port", cfg.Port, "env", cfg.AppEnv)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+
+		if err := srv.ListenAndServe(); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
 			slog.Error("http server", "err", err)
 			stop()
 		}
@@ -89,8 +123,14 @@ func run() error {
 
 	<-ctx.Done()
 	slog.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
 	defer cancel()
+
 	sched.Stop(shutdownCtx)
+
 	return srv.Shutdown(shutdownCtx)
 }

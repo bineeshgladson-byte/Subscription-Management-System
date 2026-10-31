@@ -19,11 +19,11 @@ import (
 
 // Deps carries everything route files need. Add new handlers here as modules land.
 type Deps struct {
-	Config config.Config
-	DB     *gorm.DB
-	JWT    *jwtutil.Manager
-
-	Auth *handler.AuthHandler
+	Config       config.Config
+	DB           *gorm.DB
+	JWT          *jwtutil.Manager
+	Auth         *handler.AuthHandler
+	Subscription *handler.SubscriptionHandler
 }
 
 // Role guards, reused by every routes_*.go file.
