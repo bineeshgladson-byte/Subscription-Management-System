@@ -1,8 +1,67 @@
-# Secrets
+# =====================================================================
+# SECRETS — never commit. Only the *.example templates are allowed.
+# =====================================================================
 .env
-*.env.local
+.env.*
+*.env
+!.env.example
+!**/.env.example
+
+# Keys, certificates, credentials
 *.pem
 *.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+secrets/
+**/secrets/
+credentials*.json
+service-account*.json
+*-credentials.json
+
+# Android signing / Firebase / Apple configs
+**/android/key.properties
+**/android/local.properties
+**/google-services.json
+**/GoogleService-Info.plist
+**/firebase_options.dart
+
+# Local overrides that may contain passwords
+docker-compose.override.yml
+docker-compose.*.local.yml
+
+# Database dumps and backups (seeds in database/seeds are fine)
+*.dump
+*.backup
+*.sql.gz
+backups/
+
+# =====================================================================
+# Build output, caches, local-only files
+# =====================================================================
+
+# Go
+backend/bin/
+backend/tmp/
+backend/api
+*.test
+*.out
+coverage.*
+vendor/
+
+# Flutter / Dart (frontend/.gitignore has the full list)
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+**/.pub-cache/
+
+# Node tooling (e.g. newman, prism run locally)
+node_modules/
 
 # OS / editors
 .DS_Store
@@ -12,18 +71,9 @@ Thumbs.db
 !.vscode/extensions.json
 *.iml
 *.swp
+*~
 
-# Go
-backend/bin/
-backend/tmp/
-*.test
-*.out
-coverage.*
-
-# Flutter / Dart (frontend/.gitignore has the full list)
-frontend/build/
-frontend/.dart_tool/
-
-# Misc
-/tmp/
+# Logs and temp
 *.log
+/tmp/
+.tmp/
