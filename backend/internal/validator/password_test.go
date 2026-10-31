@@ -41,3 +41,16 @@ func TestGSTIN(t *testing.T) {
 		}
 	}
 }
+
+func TestPhone(t *testing.T) {
+	for _, ok := range []string{"9876543210", "+91 98765 43210", "(080) 4123-4567"} {
+		if Phone(ok) == "" {
+			t.Errorf("valid phone rejected: %q", ok)
+		}
+	}
+	for _, bad := range []string{"", "12345", "98765abc10", "91+9876543210", "1234567890123456"} {
+		if Phone(bad) != "" {
+			t.Errorf("invalid phone accepted: %q", bad)
+		}
+	}
+}

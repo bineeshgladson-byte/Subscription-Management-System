@@ -54,6 +54,9 @@ func (s *AuthService) Register(ctx context.Context, in dto.RegisterRequest) (*mo
 	if reason := validator.Password(in.Password); reason != "" {
 		return nil, apperr.Validation("Some fields are invalid", map[string]string{"password": reason})
 	}
+	if in.Phone != "" && validator.Phone(in.Phone) == "" {
+		return nil, apperr.Validation("Some fields are invalid", map[string]string{"phone": "is not a valid phone number"})
+	}
 
 	hashed, err := s.Hasher.Hash(in.Password)
 	if err != nil {
@@ -77,6 +80,29 @@ func (s *AuthService) Register(ctx context.Context, in dto.RegisterRequest) (*mo
 				return emailTaken()
 			}
 			return err
+		}
+
+		// Staff may already have created a customer record with this email
+		// (e.g. from a sales call). Link the new login to it instead of creating
+		// a duplicate, so the customer sees their existing subscriptions.
+		existing, err := s.Customers.FindLiveByEmail(tx, email)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			if existing.UserID != nil {
+				return emailTaken()
+			}
+			link := map[string]any{"user_id": user.ID}
+			if existing.Phone == nil && in.Phone != "" {
+				link["phone"] = in.Phone
+			}
+			if err := s.Customers.Update(tx, existing.ID, link); err != nil {
+				return err
+			}
+			existing.UserID = &user.ID
+			user.Customer = existing
+			return nil
 		}
 
 		cust := &models.Customer{UserID: &user.ID, Name: in.FullName, Email: email}
@@ -177,6 +203,9 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID int64, in dto.Up
 		custFields["name"] = *in.FullName // keep the customer record's name in sync
 	}
 	if in.Phone != nil {
+		if *in.Phone != "" && validator.Phone(*in.Phone) == "" {
+			return nil, apperr.Validation("Some fields are invalid", map[string]string{"phone": "is not a valid phone number"})
+		}
 		custFields["phone"] = nullIfEmpty(*in.Phone)
 	}
 	if in.CompanyName != nil {
