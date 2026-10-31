@@ -33,6 +33,8 @@ type Deps struct {
 	Plans     *handler.PlanHandler
 	Templates *handler.TemplateHandler
 	Discounts *handler.DiscountHandler
+	Sales     *handler.SalesHandler
+	Payment   *handler.PaymentHandler
 }
 
 // Role guards, reused by every routes_*.go file.

@@ -16,6 +16,7 @@ class NavItem {
 const _all = {Role.admin, Role.staff, Role.customer};
 const _team = {Role.admin, Role.staff};
 const _admin = {Role.admin};
+const _customer = {Role.customer};
 
 const navItems = <NavItem>[
   NavItem('/dashboard', 'Dashboard', Icons.space_dashboard_outlined, _all),
@@ -27,11 +28,23 @@ const navItems = <NavItem>[
   NavItem('/templates', 'Templates', Icons.description_outlined, _team),
   NavItem('/pricing', 'Price calculator', Icons.calculate_outlined, _team),
   NavItem('/quotations', 'Quotations', Icons.request_quote_outlined, _team),
-  NavItem('/subscriptions', 'Subscriptions', Icons.autorenew, _all),
-  NavItem('/invoices', 'Invoices', Icons.receipt_long_outlined, _all),
-  NavItem('/payments', 'Payments', Icons.payments_outlined, _all),
+  NavItem('/subscriptions', 'Subscriptions', Icons.autorenew, _team),
+  NavItem('/invoices', 'Invoices', Icons.receipt_long_outlined, _team),
+  NavItem('/payments', 'Payments', Icons.payments_outlined, _team),
+  NavItem('/my-subscriptions', 'My subscriptions', Icons.autorenew, _customer),
+  NavItem(
+    '/my-invoices',
+    'My invoices',
+    Icons.receipt_long_outlined,
+    _customer,
+  ),
+  NavItem(
+    '/my-payments',
+    'Payment history',
+    Icons.payments_outlined,
+    _customer,
+  ),
   NavItem('/discounts', 'Discounts', Icons.local_offer_outlined, _admin),
-  NavItem('/reports', 'Reports', Icons.insights_outlined, _team),
   NavItem('/settings', 'Settings', Icons.settings_outlined, _admin),
   NavItem('/profile', 'Profile', Icons.person_outline, _all),
 ];

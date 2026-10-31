@@ -5,19 +5,24 @@ package jobs
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/robfig/cron/v3"
 
 	"github.com/brightloop/subscriptions/backend/pkg/clock"
 )
 
+// BillingFunc runs one billing pass (SalesService.RunBilling).
+type BillingFunc func(ctx context.Context, asOf time.Time)
+
 type Scheduler struct {
-	cron  *cron.Cron
-	clock clock.Clock
+	cron    *cron.Cron
+	clock   clock.Clock
+	billing BillingFunc
 }
 
-func NewScheduler(clk clock.Clock) *Scheduler {
-	return &Scheduler{cron: cron.New(cron.WithLocation(clk.Now().Location())), clock: clk}
+func NewScheduler(clk clock.Clock, billing BillingFunc) *Scheduler {
+	return &Scheduler{cron: cron.New(cron.WithLocation(clk.Now().Location())), clock: clk, billing: billing}
 }
 
 // Start registers jobs. billingSpec comes from BILLING_CRON (e.g. "@every 1h").
@@ -42,13 +47,16 @@ func (s *Scheduler) Stop(ctx context.Context) {
 }
 
 func (s *Scheduler) runBilling() {
-	// TODO(Phase 6): call BillingService.RunDue(ctx, s.clock.Today()).
-	// See the "Automatic billing" section of the architecture plan.
-	slog.Info("billing job tick (not implemented yet)", "as_of", s.clock.Today().Format("2006-01-02"))
+	t := s.clock.Today()
+	asOf := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	if s.billing == nil {
+		slog.Info("billing job tick (no billing service wired)")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	s.billing(ctx, asOf) // activates due subscriptions, closes expired quotations, invoices every due period
 }
 
-func (s *Scheduler) runLifecycle() {
-	// TODO(Phase 5/6): activate confirmed subscriptions whose start_date <= today,
-	// close expired quotations and subscriptions past expiry_date.
-	slog.Info("lifecycle job tick (not implemented yet)")
-}
+// runLifecycle: the billing pass already activates and closes; run it daily too.
+func (s *Scheduler) runLifecycle() { s.runBilling() }

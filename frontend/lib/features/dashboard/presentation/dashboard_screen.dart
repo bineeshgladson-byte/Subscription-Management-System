@@ -14,6 +14,7 @@ import '../../customers/data/customers_api.dart';
 import '../../discounts/data/discounts_api.dart';
 import '../../plans/data/plans_api.dart';
 import '../../products/data/products_api.dart';
+import '../../sales/data/sales_api.dart';
 import '../../staff/data/staff_api.dart';
 
 /// Everything on this page comes from live API calls. Revenue, MRR and
@@ -140,7 +141,7 @@ class DashboardScreen extends ConsumerWidget {
                 ),
               const SizedBox(height: 8),
               Text(
-                'Your subscriptions and invoices appear here once those modules are live.',
+                'See My subscriptions, My invoices and Payment history in the menu.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -198,6 +199,8 @@ class DashboardScreen extends ConsumerWidget {
                     _tile(context, 'Active staff', '${d.staff}', '/staff'),
                 ],
               ),
+              const SizedBox(height: 18),
+              const _Finance(),
               const SizedBox(height: 24),
               LayoutBuilder(
                 builder: (context, c) {
@@ -261,26 +264,6 @@ class DashboardScreen extends ConsumerWidget {
                         );
                 },
               ),
-              const SizedBox(height: 14),
-              const Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 13,
-                    color: WorkspaceTheme.muted,
-                  ),
-                  SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Revenue, MRR and overdue invoices appear here once billing and payments are live.',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: WorkspaceTheme.muted,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
             ],
           );
         },
@@ -316,4 +299,128 @@ class DashboardScreen extends ConsumerWidget {
           ),
         ),
       );
+}
+
+/// Subscriptions, revenue, payments and overdue invoices from GET /dashboard/summary.
+/// Money is admin-only (the API returns null for staff).
+class _Finance extends ConsumerStatefulWidget {
+  const _Finance();
+  @override
+  ConsumerState<_Finance> createState() => _FinanceState();
+}
+
+class _FinanceState extends ConsumerState<_Finance> {
+  final _from = TextEditingController(
+    text: Fmt.apiDate(DateTime(DateTime.now().year, DateTime.now().month)),
+  );
+  final _to = TextEditingController(text: Fmt.apiDate(DateTime.now()));
+  ({String? from, String? to}) _range = (from: null, to: null);
+
+  @override
+  void dispose() {
+    _from.dispose();
+    _to.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AsyncView(
+    value: ref.watch(dashboardSummaryProvider(_range)),
+    onRetry: () => ref.invalidate(dashboardSummaryProvider),
+    builder: (d) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SizedBox(
+              width: 180,
+              child: DateField(controller: _from, label: 'From'),
+            ),
+            SizedBox(
+              width: 180,
+              child: DateField(controller: _to, label: 'To'),
+            ),
+            OutlinedButton(
+              onPressed: () => setState(
+                () => _range = (from: _from.text.trim(), to: _to.text.trim()),
+              ),
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            _box(
+              'Active subscriptions',
+              '${d.activeSubscriptions} of ${d.totalSubscriptions}',
+              '/subscriptions',
+            ),
+            if (d.mrr != null) _box('MRR', Fmt.inr(d.mrr!), '/subscriptions'),
+            if (d.arr != null) _box('ARR', Fmt.inr(d.arr!), '/subscriptions'),
+            if (d.revenueReceived != null)
+              _box(
+                'Revenue received',
+                Fmt.inr(d.revenueReceived!),
+                '/payments',
+              ),
+            if (d.outstanding != null)
+              _box('Outstanding', Fmt.inr(d.outstanding!), '/invoices'),
+            _box(
+              'Overdue invoices',
+              d.overdueAmount == null
+                  ? '${d.overdueInvoices}'
+                  : '${d.overdueInvoices} · ${Fmt.inr(d.overdueAmount!)}',
+              '/invoices',
+            ),
+            _box('Open invoices', '${d.openInvoices}', '/invoices'),
+          ],
+        ),
+        if (d.byStatus.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final e in d.byStatus.entries)
+                Pill('${e.key}: ${e.value}', tone: 'brand'),
+            ],
+          ),
+        ],
+        if (d.recentPayments.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text(
+            'Recent payments',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          for (final p in d.recentPayments)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('${Fmt.inr(p.amount)} · ${p.customerName ?? ''}'),
+              subtitle: Text(
+                '${p.number} · ${paymentMethods[p.method] ?? p.method} · ${Fmt.date(p.paymentDate)} · ${p.invoiceNumber ?? ''}',
+              ),
+            ),
+        ],
+        Text(
+          'Revenue counts completed payments between ${Fmt.date(d.from)} and ${Fmt.date(d.to)}.',
+          style: const TextStyle(fontSize: 11, color: WorkspaceTheme.muted),
+        ),
+      ],
+    ),
+  );
+
+  Widget _box(String label, String value, String route) => SizedBox(
+    width: 220,
+    child: InkWell(
+      borderRadius: BorderRadius.circular(17),
+      onTap: () => context.go(route),
+      child: MetricTile(label: label, value: value),
+    ),
+  );
 }
