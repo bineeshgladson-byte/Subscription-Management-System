@@ -56,6 +56,7 @@ func run() error {
 	paymentRepo := repository.NewPaymentRepo()
 	invoiceRepo := repository.NewInvoiceRepo()
 	resetTokenRepo := repository.NewResetTokenRepo()
+	subscriptionRepo := repository.NewSubscriptionRepo()
 
 	// Services
 	authSvc := service.NewAuthService(service.AuthDeps{
@@ -71,7 +72,7 @@ func run() error {
 		ResetTTL:         cfg.ResetTokenTTL,
 		ShowCodesInEmail: cfg.EmailShowCodes,
 	})
-
+	meSvc := service.NewMeService(db, subscriptionRepo)
 	paymentSvc := service.NewPaymentService(db, paymentRepo, invoiceRepo)
 	staffSvc := service.NewStaffService(db, userRepo, hasher, authSvc, cfg.InviteTokenTTL)
 	customerSvc := service.NewCustomerService(db, customerRepo, userRepo, clk)
@@ -97,8 +98,14 @@ func run() error {
 		Customers: handler.NewCustomerHandler(customerSvc),
 		Taxes:     handler.NewTaxHandler(taxSvc),
 		Payment:   handler.NewPaymentHandler(paymentSvc),
+		Me:        handler.NewMeHandler(meSvc),
 	})
-	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
+
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           engine,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
 	// Background jobs
 	sched := jobs.NewScheduler(clk)
