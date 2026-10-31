@@ -73,6 +73,8 @@ func run() error {
 	templateSvc := service.NewTemplateService(db, repository.NewTemplateRepo(), planRepo, productRepo)
 	discountSvc := service.NewDiscountService(db, discountRepo, productRepo, clk)
 	pricingSvc := service.NewPricingService(db, productRepo, discountRepo, clk)
+	salesSvc := service.NewSalesService(db, productRepo, discountRepo, clk, mail, cfg.InvoiceAutoConfirm)
+	paymentSvc := service.NewPaymentService(db, repository.NewPaymentRepo(), repository.NewInvoiceRepo())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -98,11 +100,16 @@ func run() error {
 		Plans:     handler.NewPlanHandler(planSvc),
 		Templates: handler.NewTemplateHandler(templateSvc),
 		Discounts: handler.NewDiscountHandler(discountSvc, pricingSvc),
+		Sales:     handler.NewSalesHandler(salesSvc, cfg, clk),
+		Payment:   handler.NewPaymentHandler(paymentSvc),
 	})
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
 
 	// Background jobs
-	sched := jobs.NewScheduler(clk)
+	sched := jobs.NewScheduler(clk, func(ctx context.Context, asOf time.Time) {
+		r := salesSvc.RunBilling(ctx, asOf)
+		slog.Info("billing run", "as_of", r.AsOf, "activated", r.Activated, "invoices", r.InvoicesCreated, "closed", r.Closed, "errors", len(r.Errors))
+	})
 	if err := sched.Start(cfg.BillingCron); err != nil {
 		return err
 	}

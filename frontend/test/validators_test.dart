@@ -32,6 +32,12 @@ void main() {
     expect(canAccess(Role.customer, '/discounts'), isFalse);
     expect(canAccess(Role.staff, '/staff'), isFalse);
     expect(canAccess(Role.admin, '/staff'), isTrue);
-    expect(canAccess(Role.customer, '/invoices'), isTrue);
+    expect(
+      canAccess(Role.customer, '/invoices'),
+      isFalse,
+    ); // customer portal (/me) not built yet
+    expect(canAccess(Role.customer, '/plans'), isTrue);
+    expect(canAccess(Role.customer, '/my-invoices'), isTrue);
+    expect(canAccess(Role.admin, '/my-invoices'), isFalse);
   });
 }

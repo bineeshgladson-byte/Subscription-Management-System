@@ -130,6 +130,8 @@ func setup(t *testing.T) *env {
 	templateSvc := service.NewTemplateService(db, repository.NewTemplateRepo(), planRepo, productRepo)
 	discountSvc := service.NewDiscountService(db, discountRepo, productRepo, clk)
 	pricingSvc := service.NewPricingService(db, productRepo, discountRepo, clk)
+	salesSvc := service.NewSalesService(db, productRepo, discountRepo, clk, mail, true)
+	paymentSvc := service.NewPaymentService(db, repository.NewPaymentRepo(), repository.NewInvoiceRepo())
 
 	engine := router.New(router.Deps{
 		Config:   config.Config{AppEnv: "test"},
@@ -145,6 +147,8 @@ func setup(t *testing.T) *env {
 		Plans:     handler.NewPlanHandler(planSvc),
 		Templates: handler.NewTemplateHandler(templateSvc),
 		Discounts: handler.NewDiscountHandler(discountSvc, pricingSvc),
+		Sales:     handler.NewSalesHandler(salesSvc, config.Config{AppEnv: "development"}, clk),
+		Payment:   handler.NewPaymentHandler(paymentSvc),
 	})
 	return &env{t: t, db: db, engine: engine, mail: mail, auth: authSvc, users: users, hasher: hasher,
 		suffix: fmt.Sprintf("%d", time.Now().UnixNano())}
