@@ -49,11 +49,16 @@ func run() error {
 	hasher := hash.New(cfg.BcryptCost)
 
 	// Repositories
+	// Repositories
 	userRepo := repository.NewUserRepo()
 	customerRepo := repository.NewCustomerRepo()
+	paymentRepo := repository.NewPaymentRepo()
+	invoiceRepo := repository.NewInvoiceRepo()
 
 	// Services
+	// Services
 	authSvc := service.NewAuthService(db, userRepo, customerRepo, hasher, jwtMgr, clk)
+	paymentSvc := service.NewPaymentService(db, paymentRepo, invoiceRepo)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -65,11 +70,13 @@ func run() error {
 	}
 
 	// HTTP
+	// HTTP
 	engine := router.New(router.Deps{
-		Config: cfg,
-		DB:     db,
-		JWT:    jwtMgr,
-		Auth:   handler.NewAuthHandler(authSvc),
+		Config:  cfg,
+		DB:      db,
+		JWT:     jwtMgr,
+		Auth:    handler.NewAuthHandler(authSvc),
+		Payment: handler.NewPaymentHandler(paymentSvc),
 	})
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 10 * time.Second}
 

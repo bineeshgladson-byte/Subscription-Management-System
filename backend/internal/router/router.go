@@ -23,7 +23,8 @@ type Deps struct {
 	DB     *gorm.DB
 	JWT    *jwtutil.Manager
 
-	Auth *handler.AuthHandler
+	Auth    *handler.AuthHandler
+	Payment *handler.PaymentHandler
 }
 
 // Role guards, reused by every routes_*.go file.
