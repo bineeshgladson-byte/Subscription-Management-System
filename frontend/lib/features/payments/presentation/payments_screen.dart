@@ -15,14 +15,13 @@ class PaymentsScreen extends ConsumerStatefulWidget {
 }
 
 class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
-  PaymentQuery _q = (q: '', method: null, page: 1);
-
-  @override
-  ConsumerState<PaymentsScreen> createState() => _PaymentsScreenState();
-}
-
-class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
-  PaymentQuery _q = (method: null, status: null, invoiceId: null, customerId: null, page: 1);
+  PaymentQuery _q = (
+    method: null,
+    status: null,
+    invoiceId: null,
+    customerId: null,
+    page: 1,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +46,13 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
               'cash': 'Cash',
             },
             onChanged: (v) => setState(
-              () => _q = (method: v, status: _q.status, invoiceId: _q.invoiceId, customerId: _q.customerId, page: 1),
+              () => _q = (
+                method: v,
+                status: _q.status,
+                invoiceId: _q.invoiceId,
+                customerId: _q.customerId,
+                page: 1,
+              ),
             ),
           ),
           FilterDropdown<String>(
@@ -60,7 +65,13 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
               'failed': 'Failed',
             },
             onChanged: (v) => setState(
-              () => _q = (method: _q.method, status: v, invoiceId: _q.invoiceId, customerId: _q.customerId, page: 1),
+              () => _q = (
+                method: _q.method,
+                status: v,
+                invoiceId: _q.invoiceId,
+                customerId: _q.customerId,
+                page: 1,
+              ),
             ),
           ),
         ],
@@ -85,13 +96,19 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                       : const Color(0xFFF1F5F9),
                   child: Icon(
                     Icons.payment_outlined,
-                    color: p.isCompleted ? const Color(0xFF0F8A52) : const Color(0xFF64748B),
+                    color: p.isCompleted
+                        ? const Color(0xFF0F8A52)
+                        : const Color(0xFF64748B),
                   ),
                 ),
                 title: '${p.paymentNumber} · Invoice ${p.invoiceNumber}',
-                subtitle: '${p.customerName} · ${p.method.toUpperCase()} · Date: ${p.paymentDate}${p.reference != null ? " · Ref: ${p.reference}" : ""}',
+                subtitle:
+                    '${p.customerName} · ${p.method.toUpperCase()} · Date: ${p.paymentDate}${p.reference != null ? " · Ref: ${p.reference}" : ""}',
                 pills: [
-                  Pill(p.status.toUpperCase(), tone: p.isCompleted ? 'good' : 'warn'),
+                  Pill(
+                    p.status.toUpperCase(),
+                    tone: p.isCompleted ? 'good' : 'warn',
+                  ),
                   Pill(Fmt.inr(p.amount), tone: 'brand'),
                 ],
                 onTap: () => _viewDetails(p),
@@ -101,7 +118,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                     if (!isCustomer && p.isCompleted)
                       IconButton(
                         tooltip: 'Refund Payment',
-                        icon: const Icon(Icons.replay_outlined, color: Colors.deepOrange),
+                        icon: const Icon(
+                          Icons.replay_outlined,
+                          color: Colors.deepOrange,
+                        ),
                         onPressed: () => _refund(p.id),
                       ),
                     IconButton(
@@ -117,7 +137,13 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
               pageSize: page.pageSize,
               total: page.total,
               onPage: (pg) => setState(
-                () => _q = (method: _q.method, status: _q.status, invoiceId: _q.invoiceId, customerId: _q.customerId, page: pg),
+                () => _q = (
+                  method: _q.method,
+                  status: _q.status,
+                  invoiceId: _q.invoiceId,
+                  customerId: _q.customerId,
+                  page: pg,
+                ),
               ),
             ),
           ],
@@ -131,9 +157,14 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Refund Payment'),
-        content: const Text('Are you sure you want to mark this payment as refunded?'),
+        content: const Text(
+          'Are you sure you want to mark this payment as refunded?',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
             onPressed: () => Navigator.pop(ctx, true),
@@ -154,7 +185,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
     }
   }
@@ -186,20 +219,34 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );
   }
 
   Widget _row(String label, String value, {bool isBold = false}) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: TextStyle(color: Colors.grey[700], fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
-            Text(value, style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey[700],
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+          ),
         ),
-      );
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ],
+    ),
+  );
 }
